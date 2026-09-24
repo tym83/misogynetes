@@ -23,6 +23,16 @@ It was built as a punishment for them. If it feels accurate, that's the point, a
 What the evidence says about women, on average and with sources: https://github.com/tym83/kyvernetria
 To apologize: ` + "`misogynectl sorry for <what you did>`" + `. To make it stop: ` + "`MISOGYNETES=off`" + `.`
 
+// about repeats the frame on request: what this is, who it is for, where
+// the evidence is and how to make it stop.
+const about = banner + `
+
+It runs exactly the kubectl command you typed, or nothing. Never anything else.
+Exit codes are kubectl's own when it ran, 1 when she refused.
+In pipes, scripts and CI it is plain kubectl. ` + "`--help`" + ` is kubectl's own help.
+Her own commands, as the first word: sorry, what, flowers, about.
+Source: https://github.com/tym83/misogynetes`
+
 // quotes are the quotes he imagines she keeps reposting.
 var quotes = []string{
 	"Hard to find, easy to lose, impossible to forget. ✨",
@@ -70,6 +80,10 @@ const pmsNotice = "📅 It's that time of the month. (His words, not hers.)"
 
 // fineAfterError replaces a kubectl error: everything is fine.
 const fineAfterError = "Everything's fine. 🙂"
+
+// hiddenHint follows a hidden error, plainly, so nobody is misled about
+// what happened. %d is kubectl's exit code.
+const hiddenHint = "(kubectl exit %d — `misogynectl what` if you really want to know)"
 
 // whatAnswers escalate each time the user asks what's wrong.
 var whatAnswers = []string{

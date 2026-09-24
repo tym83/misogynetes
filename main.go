@@ -68,7 +68,10 @@ func run(args []string) int {
 		})
 	}
 
-	if own, rest := ownCommand(args); own != "" {
+	if own, rest := ownCommand(args); own == "about" {
+		fmt.Println(about)
+		return 0
+	} else if own != "" {
 		var lines []string
 		update(func() {
 			switch own {
@@ -126,19 +129,20 @@ func run(args []string) int {
 		var lines []string
 		update(func() { lines = c.Failed(args, stderr) })
 		say(lines)
+		fmt.Fprintf(os.Stderr, hiddenHint+"\n", code)
 		return code
 	}
 }
 
-// ownCommand reports her own command (sorry, what, whats-wrong, flowers),
-// which counts only as the very first word. Anywhere else it is a kubectl
-// argument: "--as what get pods" is kubectl's business.
+// ownCommand reports her own command (sorry, what, whats-wrong, flowers,
+// about), which counts only as the very first word. Anywhere else it is a
+// kubectl argument: "--as what get pods" is kubectl's business.
 func ownCommand(args []string) (string, []string) {
 	if len(args) == 0 {
 		return "", nil
 	}
 	switch args[0] {
-	case "sorry", "what", "whats-wrong", "flowers":
+	case "sorry", "what", "whats-wrong", "flowers", "about":
 		return args[0], args[1:]
 	}
 	return "", nil

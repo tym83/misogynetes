@@ -397,6 +397,25 @@ func TestPipesGetPlainKubectl(t *testing.T) {
 	if code != 3 || strings.Contains(errOut, "boom") || !strings.Contains(errOut, fineAfterError) {
 		t.Errorf("code %d, error not hidden behind fine: %q", code, errOut)
 	}
+	if !strings.Contains(errOut, "(kubectl exit 3 — `misogynectl what`") {
+		t.Errorf("hidden error without the honest hint: %q", errOut)
+	}
+}
+
+func TestAboutRepeatsTheFrame(t *testing.T) {
+	s := newSandbox(t, echoKubectl)
+	out, _, code := s.run([]string{"MISOGYNETES=always", "MISOGYNETES_DAY=25"}, "about")
+	for _, want := range []string{"punishment for them", "https://github.com/tym83/kyvernetria", "MISOGYNETES=off"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("about without %q: %q", want, out)
+		}
+	}
+	if code != 0 || s.kubectlRan() {
+		t.Errorf("about: code %d, kubectl ran %v", code, s.kubectlRan())
+	}
+	if out, _, _ := s.run([]string{"MISOGYNETES=always", "MISOGYNETES_SEED=1"}, "--help"); out != "kubectl ran: --help\n" && s.kubectlRan() {
+		t.Errorf("--help is not kubectl's: %q", out)
+	}
 }
 
 func TestInteractiveCommandsKeepTheirStderr(t *testing.T) {
