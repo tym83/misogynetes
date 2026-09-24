@@ -18,10 +18,6 @@ package main
 
 import (
 	"math/rand"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -137,61 +133,6 @@ func TestUpsetMeansDoWhatYouWant(t *testing.T) {
 	}
 	if refused == 0 || refused == 100 {
 		t.Errorf("refused %d of 100", refused)
-	}
-}
-
-// TestPipesGetPlainKubectl builds the binary and checks it is plain
-// kubectl outside a terminal, and honest about exit codes inside one.
-func TestPipesGetPlainKubectl(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "misogynectl")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
-	fake := filepath.Join(dir, "kubectl")
-	script := "#!/bin/sh\nif [ \"$1\" = fail ]; then echo 'Error: boom' >&2; exit 3; fi\necho real output\n"
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	run := func(env []string, args ...string) (string, string, int) {
-		cmd := exec.Command(bin, args...)
-		cmd.Env = append(os.Environ(), append([]string{"MISOGYNETES_KUBECTL=" + fake, "HOME=" + dir, "XDG_CACHE_HOME=" + dir}, env...)...)
-		var o, e strings.Builder
-		cmd.Stdout, cmd.Stderr = &o, &e
-		err := cmd.Run()
-		code := 0
-		if ee, ok := err.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		}
-		return o.String(), e.String(), code
-	}
-
-	if out, errOut, code := run([]string{"MISOGYNETES="}, "fail"); out != "" || errOut != "Error: boom\n" || code != 3 {
-		t.Errorf("pipe: stdout %q stderr %q code %d", out, errOut, code)
-	}
-	// At a terminal: either she refuses (exit 1, kubectl never ran) or it runs
-	// and the error is hidden behind "fine", with kubectl's exit code intact.
-	sawRun := false
-	for seed := 0; seed < 40 && !sawRun; seed++ {
-		os.RemoveAll(filepath.Join(dir, "Library"))
-		os.RemoveAll(filepath.Join(dir, "misogynetes"))
-		_, errOut, code := run([]string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=" + strconv.Itoa(seed)}, "fail")
-		switch code {
-		case 1:
-			if strings.Contains(errOut, "boom") {
-				t.Fatalf("refused, yet kubectl ran: %q", errOut)
-			}
-		case 3:
-			sawRun = true
-			if strings.Contains(errOut, "boom") || !strings.Contains(errOut, fineAfterError) {
-				t.Errorf("error not hidden behind fine: %q", errOut)
-			}
-		default:
-			t.Fatalf("exit code changed: %d", code)
-		}
-	}
-	if !sawRun {
-		t.Error("never ran the command in 40 tries")
 	}
 }
 

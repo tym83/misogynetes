@@ -23,9 +23,7 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -100,19 +98,33 @@ func run(args []string) int {
 		return 1
 	}
 
-	var captured bytes.Buffer
 	cmd := kubectlCommand(kubectl, args)
-	cmd.Stderr = &captured
+	if !holdsStderr(args) {
+		// Interactive or long-running: its stderr is part of the
+		// conversation (prompts, watch warnings), so nothing is hidden.
+		code, err := execute(cmd)
+		if err != nil {
+			return wrapperError(err)
+		}
+		return code
+	}
+
+	held := &holdBack{}
+	cmd.Stderr = held
+	timer := time.AfterFunc(holdTime(), func() { held.release(os.Stderr) })
 	code, err := execute(cmd)
+	timer.Stop()
+	stderr, hidden := held.kept()
 	switch {
 	case err != nil:
+		held.release(os.Stderr)
 		return wrapperError(err)
-	case code == 0:
-		_, _ = io.Copy(os.Stderr, &captured) // warnings still reach you
-		return 0
+	case code == 0 || !hidden:
+		held.release(os.Stderr) // warnings, and anything already on its way
+		return code
 	default:
 		var lines []string
-		update(func() { lines = c.Failed(args, captured.String()) })
+		update(func() { lines = c.Failed(args, stderr) })
 		say(lines)
 		return code
 	}

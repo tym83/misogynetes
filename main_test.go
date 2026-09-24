@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -377,5 +378,157 @@ func TestNoLoopThroughItself(t *testing.T) {
 	_, errOut, code := s.run([]string{"MISOGYNETES=off", "MISOGYNETES_KUBECTL=" + loop}, "get", "pods")
 	if code != 1 || !strings.Contains(errOut, depthVar) {
 		t.Errorf("loop through a script: code %d stderr %q", code, errOut)
+	}
+}
+
+// TestPipesGetPlainKubectl checks she is plain kubectl outside a terminal,
+// and honest about exit codes inside one.
+func TestPipesGetPlainKubectl(t *testing.T) {
+	s := newSandbox(t, "if [ \"$2\" = fail ]; then echo 'Error: boom' >&2; exit 3; fi\necho real output\n")
+	if out, errOut, code := s.run([]string{"MISOGYNETES="}, "get", "fail"); out != "" || errOut != "Error: boom\n" || code != 3 {
+		t.Errorf("pipe: stdout %q stderr %q code %d", out, errOut, code)
+	}
+	if out, errOut, code := s.run([]string{"MISOGYNETES=off"}, "get", "ok"); out != "real output\n" || errOut != "" || code != 0 {
+		t.Errorf("off: stdout %q stderr %q code %d", out, errOut, code)
+	}
+	// At a terminal the error is hidden behind "fine", with kubectl's exit
+	// code intact (acting fails the test if she refuses any other way).
+	_, errOut, code := s.acting(nil, "get", "fail")
+	if code != 3 || strings.Contains(errOut, "boom") || !strings.Contains(errOut, fineAfterError) {
+		t.Errorf("code %d, error not hidden behind fine: %q", code, errOut)
+	}
+}
+
+func TestInteractiveCommandsKeepTheirStderr(t *testing.T) {
+	s := newSandbox(t, "echo 'If you don'\\''t see a command prompt, try pressing enter.' >&2\necho 'Error: boom' >&2\nexit 3\n")
+	for _, args := range [][]string{
+		{"exec", "-it", "web", "--", "sh"},
+		{"run", "-it", "tmp", "--image=busybox"},
+		{"get", "pods", "-w"},
+		{"get", "pods", "--watch=true"},
+		{"logs", "-f", "web"},
+		{"port-forward", "svc/web", "8080:80"},
+		{"oidc-login", "get-token"},
+		{"rollout", "history", "deploy/web"},
+	} {
+		_, errOut, code := s.acting(nil, args...)
+		if code != 3 || !strings.Contains(errOut, "command prompt") || !strings.Contains(errOut, "boom") || strings.Contains(errOut, fineAfterError) {
+			t.Errorf("%v: code %d stderr %q", args, code, errOut)
+		}
+	}
+}
+
+func TestHoldsStderrOnlyForQuickCommands(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		holds bool
+	}{
+		{[]string{"get", "pods"}, true},
+		{[]string{"-n", "shop", "delete", "pod", "x"}, true},
+		{[]string{"rollout", "status", "deploy/x"}, true},
+		{[]string{"rollout", "pause", "deploy/x"}, false},
+		{[]string{"get", "pods", "-w"}, false},
+		{[]string{"get", "pods", "--watch-only"}, false},
+		{[]string{"delete", "pod", "x", "-i"}, false},
+		{[]string{"create", "deploy", "x", "--image=nginx", "--edit"}, false},
+		{[]string{"exec", "x", "--", "get"}, false},
+		{[]string{"edit", "deploy", "x"}, false},
+		{[]string{"debug", "node/x", "-it", "--image=busybox"}, false},
+		{[]string{"proxy"}, false},
+		{[]string{"cp", "a", "x:/b"}, false},
+		{[]string{"auth", "whoami"}, false},
+		{[]string{"ctx"}, false},
+		{nil, false},
+	} {
+		if got := holdsStderr(tc.args); got != tc.holds {
+			t.Errorf("holdsStderr(%v) = %v", tc.args, got)
+		}
+	}
+}
+
+func TestHoldBackKeepsOnlyTheTail(t *testing.T) {
+	h := &holdBack{}
+	for i := 0; i < 1000; i++ {
+		fmt.Fprintf(h, "line %04d %s\n", i, strings.Repeat("x", 90))
+	}
+	kept, hidden := h.kept()
+	if !hidden || len(kept) > maxHeld || !strings.HasSuffix(kept, "line 0999 "+strings.Repeat("x", 90)+"\n") {
+		t.Errorf("kept %d bytes, hidden %v", len(kept), hidden)
+	}
+	var out strings.Builder
+	h.release(&out)
+	fmt.Fprint(h, "after\n")
+	if !strings.HasPrefix(out.String(), "[... earlier stderr trimmed ...]") || !strings.HasSuffix(out.String(), "after\n") {
+		t.Errorf("released %q...", out.String()[:60])
+	}
+	if _, hidden := h.kept(); hidden {
+		t.Error("still hidden after release")
+	}
+}
+
+// TestPromptsAreNeverHeldForLong: a credential plugin asking you to log in
+// while kubectl waits must reach you while it waits, not after.
+func TestPromptsAreNeverHeldForLong(t *testing.T) {
+	if holdTime() != holdFor {
+		t.Fatal("MISOGYNETES_HOLD set in the test environment")
+	}
+	t.Setenv("MISOGYNETES_HOLD", "1h")
+	if holdTime() != holdFor {
+		t.Error("MISOGYNETES_HOLD made the hold longer")
+	}
+	script := "echo 'To sign in, open https://login.example/device and enter ABCD-1234' >&2\n" +
+		"sleep \"${SLEEP:-2}\"\necho done\nexit \"${EXIT:-0}\"\n"
+	for _, tc := range []struct {
+		hold, sleep string
+		within      time.Duration
+		exit        int
+	}{
+		{"200ms", "2", 1500 * time.Millisecond, 0},
+		{"200ms", "2", 1500 * time.Millisecond, 3},
+		{"", "5", 4 * time.Second, 0}, // the real hold
+	} {
+		s := newSandbox(t, script)
+		for seed := 0; ; seed++ {
+			if seed == 60 {
+				t.Fatal("she never let kubectl run")
+			}
+			cmd := s.command([]string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_HOLD=" + tc.hold,
+				"SLEEP=" + tc.sleep, "EXIT=" + strconv.Itoa(tc.exit), "MISOGYNETES_SEED=" + strconv.Itoa(seed)}, "get", "pods")
+			stderr, err := cmd.StderrPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdout := s.tempFile()
+			cmd.Stdout = stdout
+			start := time.Now()
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			var promptAt time.Duration
+			var said strings.Builder
+			sc := bufio.NewScanner(stderr)
+			for sc.Scan() {
+				said.WriteString(sc.Text() + "\n")
+				if promptAt == 0 && strings.Contains(sc.Text(), "To sign in") {
+					promptAt = time.Since(start)
+				}
+			}
+			err = cmd.Wait()
+			if !strings.Contains(readAll(t, stdout), "done") {
+				continue // she refused
+			}
+			code := 0
+			var ee *exec.ExitError
+			if errors.As(err, &ee) {
+				code = ee.ExitCode()
+			}
+			if promptAt == 0 || promptAt > tc.within {
+				t.Errorf("hold %q: prompt after %v (want within %v): %q", tc.hold, promptAt, tc.within, said.String())
+			}
+			if code != tc.exit || strings.Contains(said.String(), fineAfterError) {
+				t.Errorf("hold %q: code %d, stderr %q", tc.hold, code, said.String())
+			}
+			break
+		}
 	}
 }
