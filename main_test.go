@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -93,8 +95,10 @@ func (s *sandbox) command(env []string, args ...string) *exec.Cmd {
 func (s *sandbox) run(env []string, args ...string) (string, string, int) {
 	s.t.Helper()
 	cmd := s.command(env, args...)
-	var o, e strings.Builder
-	cmd.Stdout, cmd.Stderr = &o, &e
+	// Files, not pipes: a background child of the fake kubectl must not keep
+	// the test waiting.
+	o, e := s.tempFile(), s.tempFile()
+	cmd.Stdout, cmd.Stderr = o, e
 	err := cmd.Run()
 	code := 0
 	var ee *exec.ExitError
@@ -103,7 +107,25 @@ func (s *sandbox) run(env []string, args ...string) (string, string, int) {
 	} else if err != nil {
 		s.t.Fatal(err)
 	}
-	return o.String(), e.String(), code
+	return readAll(s.t, o), readAll(s.t, e), code
+}
+
+func (s *sandbox) tempFile() *os.File {
+	f, err := os.CreateTemp(s.dir, "out-*")
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	s.t.Cleanup(func() { _ = f.Close() })
+	return f
+}
+
+func readAll(t *testing.T, f *os.File) string {
+	t.Helper()
+	b, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // kubectlRan reports whether the fake kubectl ran since the last check.
@@ -250,5 +272,110 @@ func writeState(t *testing.T, path string, st *State) {
 	}
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSignalledKubectlGivesShellExitCode(t *testing.T) {
+	s := newSandbox(t, "kill -TERM $$\n")
+	if _, _, code := s.run([]string{"MISOGYNETES=off"}, "get", "pods"); code != 128+15 {
+		t.Errorf("plain: exit %d, want 143", code)
+	}
+	if _, _, code := s.acting(nil, "get", "pods"); code != 128+15 {
+		t.Errorf("acting up: exit %d, want 143", code)
+	}
+}
+
+func TestSignalsReachKubectlAndSheStillRemembers(t *testing.T) {
+	script := `trap 'kill $pid 2>/dev/null; echo "Error: interrupted" >&2; exit 42' INT TERM HUP
+echo ready
+sleep 30 & pid=$!
+wait $pid
+`
+	for _, tc := range []struct {
+		sig  syscall.Signal
+		mode string
+	}{{syscall.SIGTERM, "off"}, {syscall.SIGINT, "off"}, {syscall.SIGHUP, "off"}, {syscall.SIGINT, "always"}} {
+		s := newSandbox(t, script)
+		for seed := 0; ; seed++ {
+			if seed == 60 {
+				t.Fatal("she never let kubectl run")
+			}
+			_ = os.Remove(s.fake + ".ran")
+			cmd := s.command([]string{"MISOGYNETES=" + tc.mode, "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=" + strconv.Itoa(seed)}, "get", "pods")
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd.Stderr = s.tempFile()
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			line, _ := bufio.NewReader(stdout).ReadString('\n')
+			if line != "ready\n" {
+				_ = cmd.Wait()
+				continue // she refused
+			}
+			_ = cmd.Process.Signal(tc.sig)
+			err = cmd.Wait()
+			var ee *exec.ExitError
+			if !errors.As(err, &ee) || ee.ExitCode() != 42 {
+				t.Errorf("%s %v: %v, want kubectl's exit 42", tc.mode, tc.sig, err)
+			}
+			break
+		}
+		if tc.mode != "always" {
+			continue
+		}
+		b, err := os.ReadFile(s.statePath())
+		if err != nil || !strings.Contains(string(b), "interrupted") {
+			t.Errorf("state not saved after %v: %v %s", tc.sig, err, b)
+		}
+	}
+}
+
+func TestBackgroundChildDoesNotHangHer(t *testing.T) {
+	s := newSandbox(t, "(sleep 20) &\necho out\n")
+	start := time.Now()
+	out, _, code := s.acting(nil, "get", "pods")
+	if out != "out\n" || code != 0 || time.Since(start) > 10*time.Second {
+		t.Errorf("stdout %q code %d after %v", out, code, time.Since(start))
+	}
+}
+
+func TestWrapperErrorsAreNotFine(t *testing.T) {
+	s := newSandbox(t, echoKubectl)
+	_, errOut, code := s.run([]string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_KUBECTL=" + filepath.Join(s.dir, "nope")}, "get", "pods")
+	if code != 1 || !strings.Contains(errOut, "misogynectl:") || strings.Contains(errOut, fineAfterError) {
+		t.Errorf("kubectl missing: code %d stderr %q", code, errOut)
+	}
+}
+
+func TestNoLoopThroughItself(t *testing.T) {
+	s := newSandbox(t, echoKubectl)
+	self := filepath.Join(s.dir, "self", "kubectl")
+	if err := os.MkdirAll(filepath.Dir(self), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(s.bin, self); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"off", "always"} {
+		_, errOut, code := s.run([]string{"MISOGYNETES=" + mode, "MISOGYNETES_KUBECTL=" + self}, "get", "pods")
+		if code != 1 || !strings.Contains(errOut, "misogynectl itself") {
+			t.Errorf("%s: kubectl is misogynectl: code %d stderr %q", mode, code, errOut)
+		}
+	}
+
+	loop := filepath.Join(s.dir, "loop", "kubectl")
+	if err := os.MkdirAll(filepath.Dir(loop), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nexec " + s.bin + " \"$@\"\n"
+	if err := os.WriteFile(loop, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, code := s.run([]string{"MISOGYNETES=off", "MISOGYNETES_KUBECTL=" + loop}, "get", "pods")
+	if code != 1 || !strings.Contains(errOut, depthVar) {
+		t.Errorf("loop through a script: code %d stderr %q", code, errOut)
 	}
 }

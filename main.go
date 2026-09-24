@@ -24,12 +24,10 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,11 +39,11 @@ func main() {
 }
 
 func run(args []string) int {
-	kubectl := os.Getenv("MISOGYNETES_KUBECTL")
-	if kubectl == "" {
-		kubectl = "kubectl"
-	}
 	if !actsUp() {
+		kubectl, err := resolveKubectl()
+		if err != nil {
+			return wrapperError(err)
+		}
 		return passthrough(kubectl, args)
 	}
 
@@ -91,6 +89,10 @@ func run(args []string) int {
 		return 0
 	}
 
+	kubectl, err := resolveKubectl()
+	if err != nil {
+		return wrapperError(err)
+	}
 	var plan Plan
 	update(func() { plan = c.Before(args) })
 	say(plan.Say)
@@ -99,24 +101,20 @@ func run(args []string) int {
 	}
 
 	var captured bytes.Buffer
-	cmd := exec.Command(kubectl, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, &captured
-	err := cmd.Run()
-	var exit *exec.ExitError
+	cmd := kubectlCommand(kubectl, args)
+	cmd.Stderr = &captured
+	code, err := execute(cmd)
 	switch {
-	case err == nil:
+	case err != nil:
+		return wrapperError(err)
+	case code == 0:
 		_, _ = io.Copy(os.Stderr, &captured) // warnings still reach you
 		return 0
-	case errors.As(err, &exit):
+	default:
 		var lines []string
 		update(func() { lines = c.Failed(args, captured.String()) })
 		say(lines)
-		return exit.ExitCode()
-	default:
-		var lines []string
-		update(func() { lines = c.Failed(args, err.Error()) })
-		say(lines)
-		return 1
+		return code
 	}
 }
 
@@ -154,16 +152,9 @@ func actsUp() bool {
 }
 
 func passthrough(kubectl string, args []string) int {
-	cmd := exec.Command(kubectl, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return exit.ExitCode()
-	}
+	code, err := execute(kubectlCommand(kubectl, args))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return wrapperError(err)
 	}
-	return 0
+	return code
 }
