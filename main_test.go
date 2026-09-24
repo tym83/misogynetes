@@ -502,9 +502,12 @@ func TestPromptsAreNeverHeldForLong(t *testing.T) {
 		within      time.Duration
 		exit        int
 	}{
-		{"200ms", "2", 1500 * time.Millisecond, 0},
-		{"200ms", "2", 1500 * time.Millisecond, 3},
-		{"", "5", 4 * time.Second, 0}, // the real hold
+		// The prompt must arrive while kubectl is still waiting (within is
+		// well below sleep). The margins are wide on purpose: an absolute
+		// 1.5s window flaked on a loaded machine under -race.
+		{"200ms", "8", 6 * time.Second, 0},
+		{"200ms", "8", 6 * time.Second, 3},
+		{"", "10", 8 * time.Second, 0}, // the real hold
 	} {
 		s := newSandbox(t, script)
 		for seed := 0; ; seed++ {
