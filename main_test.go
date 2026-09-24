@@ -213,7 +213,7 @@ func TestParallelRunsLoseNothing(t *testing.T) {
 	installed := t0.Add(-100 * 24 * time.Hour)
 	at := t0
 	writeState(t, path, &State{Installed: installed, Offset: 7, Mood: 1, Grudge: "delete pod x",
-		GrudgeAt: at, LastError: "boom", BannerShown: true})
+		GrudgeAt: &at, LastError: "boom", BannerShown: true})
 
 	const n = 50
 	var wg sync.WaitGroup

@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -34,14 +35,14 @@ const (
 
 // State is kept between runs, because she remembers everything.
 type State struct {
-	Installed   time.Time `json:"installed"`
-	Offset      int       `json:"offset"`
-	Mood        int       `json:"mood"` // 0 calm, more is worse
-	Grudge      string    `json:"grudge,omitempty"`
-	GrudgeAt    time.Time `json:"grudgeAt,omitempty"`
-	LastError   string    `json:"lastError,omitempty"`
-	Asked       int       `json:"asked"`
-	BannerShown bool      `json:"bannerShown"`
+	Installed   time.Time  `json:"installed"`
+	Offset      int        `json:"offset"`
+	Mood        int        `json:"mood"` // 0 calm, more is worse
+	Grudge      string     `json:"grudge,omitempty"`
+	GrudgeAt    *time.Time `json:"grudgeAt,omitempty"`
+	LastError   string     `json:"lastError,omitempty"`
+	Asked       int        `json:"asked"`
+	BannerShown bool       `json:"bannerShown"`
 }
 
 // Cluster decides how she reacts.
@@ -58,7 +59,10 @@ func (c *Cluster) CycleDay() int {
 		return c.Day % cycleDays
 	}
 	days := int(c.Now.Sub(c.State.Installed).Hours() / 24)
-	return (days + c.State.Offset) % cycleDays
+	if days < 0 { // the clock went back past the install
+		days = 0
+	}
+	return ((days+c.State.Offset)%cycleDays + cycleDays) % cycleDays
 }
 
 // PMS reports whether it is one of the days he is so sure about.
@@ -168,7 +172,7 @@ func (c *Cluster) Before(args []string) Plan {
 func (c *Cluster) Failed(args []string, stderr string) []string {
 	c.State.Mood++
 	c.State.Grudge = grudgeOf(args)
-	c.State.GrudgeAt = c.Now
+	c.State.GrudgeAt = c.nowPtr()
 	c.State.LastError = redactError(stderr)
 	c.State.Asked = 0
 	return []string{fineAfterError}
@@ -246,7 +250,7 @@ func (c *Cluster) What() []string {
 	i := c.State.Asked - 1
 	if i >= len(whatAnswers)-1 {
 		return []string{whatAnswers[len(whatAnswers)-1],
-			fmt.Sprintf("At %s you ran: %s", c.State.GrudgeAt.Format("15:04"), c.State.Grudge),
+			fmt.Sprintf("At %s you ran: %s", c.grudgeTime(), c.State.Grudge),
 			c.State.LastError}
 	}
 	return []string{whatAnswers[i]}
@@ -257,12 +261,12 @@ func (c *Cluster) Sorry(reason string) []string {
 	if c.State.Mood == 0 {
 		c.State.Mood = 1
 		c.State.Grudge = "sorry"
-		c.State.GrudgeAt = c.Now
+		c.State.GrudgeAt = c.nowPtr()
 		c.State.LastError = "You apologized for nothing. That's suspicious."
 		c.State.Asked = 0
 		return []string{nothingToApologize}
 	}
-	at := fmt.Sprintf(thinkAboutIt, c.State.GrudgeAt.Format("15:04"))
+	at := fmt.Sprintf(thinkAboutIt, c.grudgeTime())
 	if strings.TrimSpace(reason) == "" {
 		return []string{sorryForWhat, at}
 	}
@@ -273,15 +277,44 @@ func (c *Cluster) Sorry(reason string) []string {
 	return []string{apologyAccepted}
 }
 
-// apologyMatches: the apology must name what was done, by its first word at
-// least ("sorry for delete" covers "delete pod x").
+// sorryWords name the grudge she holds for an apology nobody asked for.
+var sorryWords = map[string]bool{"sorry": true, "apologizing": true, "apologising": true}
+
+// apologyMatches: the apology must name what was done, as a whole word:
+// "sorry for the delete" covers "delete pod x", "sorry forget it" covers
+// nothing.
 func apologyMatches(reason, grudge string) bool {
-	reason = strings.ToLower(reason)
-	words := strings.Fields(strings.ToLower(grudge))
-	if len(words) == 0 {
-		return false
+	verb := Verb(strings.Fields(strings.ToLower(grudge)))
+	for _, w := range strings.FieldsFunc(strings.ToLower(reason), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-'
+	}) {
+		if w == verb || (grudge == "sorry" && sorryWords[w]) {
+			return true
+		}
 	}
-	return strings.Contains(reason, Verb(words)) || strings.Contains(reason, strings.ToLower(grudge))
+	return false
+}
+
+// nowPtr is the current time, for the state.
+func (c *Cluster) nowPtr() *time.Time {
+	t := c.Now
+	return &t
+}
+
+// grudgeTime is when the grudge started, in local time, with the date if it
+// was not today.
+func (c *Cluster) grudgeTime() string {
+	if c.State.GrudgeAt == nil {
+		return "some point"
+	}
+	at, now := c.State.GrudgeAt.Local(), c.Now.Local()
+	if y, m, d := at.Date(); y == now.Year() && m == now.Month() && d == now.Day() {
+		return at.Format("15:04")
+	}
+	if at.Year() == now.Year() {
+		return at.Format("15:04 on Jan 2")
+	}
+	return at.Format("15:04 on Jan 2, 2006")
 }
 
 // Flowers are nice. They don't change anything.

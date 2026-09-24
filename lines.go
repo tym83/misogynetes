@@ -17,21 +17,21 @@ limitations under the License.
 package main
 
 // banner is shown on the first run. The frame is part of the product: this
-// cluster is a punishment for misogynists, not a portrait of women.
-const banner = `Misogynetes: a cluster that behaves exactly the way misogynists think women behave.
+// kubectl is a punishment for misogynists, not a portrait of women.
+const banner = `Misogynetes: ` + "`kubectl`" + ` that behaves exactly the way misogynists think women behave.
 It was built as a punishment for them. If it feels accurate, that's the point, and it's on you.
 What the evidence says about women, on average and with sources: https://github.com/tym83/kyvernetria
-Apologize: misogynectl sorry for <what you did>.   Make it stop: MISOGYNETES=off.`
+To apologize: ` + "`misogynectl sorry for <what you did>`" + `. To make it stop: ` + "`MISOGYNETES=off`" + `.`
 
-// quotes are the wisdom he keeps reposting, attributed to her.
+// quotes are the quotes he imagines she keeps reposting.
 var quotes = []string{
 	"Hard to find, easy to lose, impossible to forget. ✨",
 	"If you can't handle me at my CrashLoopBackOff, you don't deserve me at my Running. 💅",
 	"I'm not like other clusters.",
 	"Some pods come into your life as blessings, some as lessons. 🦋",
-	"Don't chase the pods. The right ones will schedule themselves to you.",
+	"Don't chase the pods. The right ones will schedule themselves onto you.",
 	"My namespace is my safe space. 🌸",
-	"I'm a Running with Pending energy.",
+	"I'm Running, but with Pending energy.",
 	"Silence is also an answer. So is a 504.",
 	"A real cluster doesn't need a load balancer. She balances herself. 🧘‍♀️",
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"math/rand"
 	"strings"
 	"testing"
@@ -87,7 +88,7 @@ func TestErrorsAreFineUntilYouAskThreeTimes(t *testing.T) {
 		t.Fatal("wrong escalation")
 	}
 	third := strings.Join(c.What(), "\n")
-	if !strings.Contains(third, "14:32") || !strings.Contains(third, "delete pod api-1") || !strings.Contains(third, "not found") {
+	if !strings.Contains(third, t0.Local().Format("15:04")) || !strings.Contains(third, "delete pod api-1") || !strings.Contains(third, "not found") {
 		t.Errorf("third ask did not tell the truth: %s", third)
 	}
 }
@@ -97,15 +98,21 @@ func TestApologies(t *testing.T) {
 	if got := c.Sorry(""); got[0] != nothingToApologize || c.State.Mood != 1 {
 		t.Fatalf("apologizing for nothing should backfire: %v", got)
 	}
-	if got := c.Sorry("for sorry"); got[0] != apologyAccepted {
+	if got := c.Sorry("apologizing"); got[0] != apologyAccepted {
 		t.Fatalf("apologizing for apologizing should work: %v", got)
+	}
+	for _, reason := range []string{"sorry", "Apologising!"} {
+		c.Sorry("")
+		if got := c.Sorry(reason); got[0] != apologyAccepted {
+			t.Fatalf("sorry for %q rejected: %v", reason, got)
+		}
 	}
 
 	c.Failed([]string{"--kubeconfig", "/home/me/.kube/config", "-n", "shop", "delete", "pod", "api-1"}, "boom")
 	if c.State.Grudge != "delete pod api-1" {
 		t.Errorf("grudge kept connection details: %q", c.State.Grudge)
 	}
-	if got := c.Sorry(""); got[0] != sorryForWhat || !strings.Contains(got[1], "14:32") {
+	if got := c.Sorry(""); got[0] != sorryForWhat || !strings.Contains(got[1], t0.Local().Format("15:04")) {
 		t.Errorf("vague apology: %v", got)
 	}
 	if got := c.Sorry("being late"); got[0] != notWhatItsAbout {
@@ -220,5 +227,61 @@ func TestLastErrorIsShortAndRedacted(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, "Error: Authorization: Bearer <redacted>") {
 		t.Errorf("error lost its shape: %q", got[:120])
+	}
+}
+
+func TestApologyMatchesWholeWords(t *testing.T) {
+	for _, tc := range []struct {
+		reason, grudge string
+		ok             bool
+	}{
+		{"the delete", "delete pod x", true},
+		{"DELETE, obviously", "delete pod x", true},
+		{"forget it", "get pods", false},
+		{"undeleted", "delete pod x", false},
+		{"being late", "delete pod x", false},
+		{"sorry", "sorry", true},
+		{"apologizing", "sorry", true},
+		{"apologising", "sorry", true},
+		{"sorry", "get pods", false},
+	} {
+		if got := apologyMatches(tc.reason, tc.grudge); got != tc.ok {
+			t.Errorf("apologyMatches(%q, %q) = %v", tc.reason, tc.grudge, got)
+		}
+	}
+}
+
+func TestCycleDayNeverNegative(t *testing.T) {
+	for _, offset := range []int{0, 5, 27, -3} {
+		c := &Cluster{Now: t0.Add(-72 * time.Hour), Day: -1, State: &State{Installed: t0, Offset: offset}}
+		if d := c.CycleDay(); d < 0 || d >= cycleDays {
+			t.Errorf("offset %d: day %d", offset, d)
+		}
+	}
+}
+
+func TestGrudgeTimeIsLocalAndDatedWhenOld(t *testing.T) {
+	c := cluster(3)
+	c.Failed([]string{"delete", "pod", "x"}, "boom")
+	if got := c.grudgeTime(); got != t0.Local().Format("15:04") {
+		t.Errorf("same day: %q", got)
+	}
+	c.Now = t0.Add(49 * time.Hour)
+	if got, want := c.grudgeTime(), t0.Local().Format("15:04 on Jan 2"); got != want {
+		t.Errorf("two days later: %q, want %q", got, want)
+	}
+	c.State.GrudgeAt = nil
+	if got := c.grudgeTime(); got == "" {
+		t.Error("no time for a grudge without one")
+	}
+}
+
+func TestEmptyStateHasNoGrudgeTime(t *testing.T) {
+	b, err := json.Marshal(&State{Installed: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "grudgeAt") {
+		t.Errorf("zero grudge time written: %s", b)
 	}
 }
