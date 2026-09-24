@@ -17,21 +17,31 @@ limitations under the License.
 package main
 
 // banner is shown on the first run. The frame is part of the product: this
-// cluster is a punishment for misogynists, not a portrait of women.
-const banner = `Misogynetes: a cluster that behaves exactly the way misogynists think women behave.
+// kubectl is a punishment for misogynists, not a portrait of women.
+const banner = `Misogynetes: ` + "`kubectl`" + ` that behaves exactly the way misogynists think women behave.
 It was built as a punishment for them. If it feels accurate, that's the point, and it's on you.
 What the evidence says about women, on average and with sources: https://github.com/tym83/kyvernetria
-Apologize: misogynectl sorry for <what you did>.   Make it stop: MISOGYNETES=off.`
+To apologize: ` + "`misogynectl sorry for <what you did>`" + `. To make it stop: ` + "`MISOGYNETES=off`" + `.`
 
-// quotes are the wisdom he keeps reposting, attributed to her.
+// about repeats the frame on request: what this is, who it is for, where
+// the evidence is and how to make it stop.
+const about = banner + `
+
+It runs exactly the kubectl command you typed, or nothing. Never anything else.
+Exit codes are kubectl's own when it ran, 1 when she refused.
+In pipes, scripts and CI it is plain kubectl. ` + "`--help`" + ` is kubectl's own help.
+Her own commands, as the first word: sorry, what, flowers, about.
+Source: https://github.com/tym83/misogynetes`
+
+// quotes are the quotes he imagines she keeps reposting.
 var quotes = []string{
 	"Hard to find, easy to lose, impossible to forget. ✨",
 	"If you can't handle me at my CrashLoopBackOff, you don't deserve me at my Running. 💅",
 	"I'm not like other clusters.",
 	"Some pods come into your life as blessings, some as lessons. 🦋",
-	"Don't chase the pods. The right ones will schedule themselves to you.",
+	"Don't chase the pods. The right ones will schedule themselves onto you.",
 	"My namespace is my safe space. 🌸",
-	"I'm a Running with Pending energy.",
+	"I'm Running, but with Pending energy.",
 	"Silence is also an answer. So is a 504.",
 	"A real cluster doesn't need a load balancer. She balances herself. 🧘‍♀️",
 }
@@ -70,6 +80,10 @@ const pmsNotice = "📅 It's that time of the month. (His words, not hers.)"
 
 // fineAfterError replaces a kubectl error: everything is fine.
 const fineAfterError = "Everything's fine. 🙂"
+
+// hiddenHint follows a hidden error, plainly, so nobody is misled about
+// what happened. %d is kubectl's exit code.
+const hiddenHint = "(kubectl exit %d — `misogynectl what` if you really want to know)"
 
 // whatAnswers escalate each time the user asks what's wrong.
 var whatAnswers = []string{

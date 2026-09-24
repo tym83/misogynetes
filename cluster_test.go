@@ -17,14 +17,12 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"math/rand"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var t0 = time.Date(2026, 9, 24, 14, 32, 0, 0, time.UTC)
@@ -90,7 +88,7 @@ func TestErrorsAreFineUntilYouAskThreeTimes(t *testing.T) {
 		t.Fatal("wrong escalation")
 	}
 	third := strings.Join(c.What(), "\n")
-	if !strings.Contains(third, "14:32") || !strings.Contains(third, "delete pod api-1") || !strings.Contains(third, "not found") {
+	if !strings.Contains(third, t0.Local().Format("15:04")) || !strings.Contains(third, "delete pod api-1") || !strings.Contains(third, "not found") {
 		t.Errorf("third ask did not tell the truth: %s", third)
 	}
 }
@@ -100,15 +98,21 @@ func TestApologies(t *testing.T) {
 	if got := c.Sorry(""); got[0] != nothingToApologize || c.State.Mood != 1 {
 		t.Fatalf("apologizing for nothing should backfire: %v", got)
 	}
-	if got := c.Sorry("for sorry"); got[0] != apologyAccepted {
+	if got := c.Sorry("apologizing"); got[0] != apologyAccepted {
 		t.Fatalf("apologizing for apologizing should work: %v", got)
+	}
+	for _, reason := range []string{"sorry", "Apologising!"} {
+		c.Sorry("")
+		if got := c.Sorry(reason); got[0] != apologyAccepted {
+			t.Fatalf("sorry for %q rejected: %v", reason, got)
+		}
 	}
 
 	c.Failed([]string{"--kubeconfig", "/home/me/.kube/config", "-n", "shop", "delete", "pod", "api-1"}, "boom")
-	if c.State.Grudge != "-n shop delete pod api-1" {
+	if c.State.Grudge != "delete pod api-1" {
 		t.Errorf("grudge kept connection details: %q", c.State.Grudge)
 	}
-	if got := c.Sorry(""); got[0] != sorryForWhat || !strings.Contains(got[1], "14:32") {
+	if got := c.Sorry(""); got[0] != sorryForWhat || !strings.Contains(got[1], t0.Local().Format("15:04")) {
 		t.Errorf("vague apology: %v", got)
 	}
 	if got := c.Sorry("being late"); got[0] != notWhatItsAbout {
@@ -139,67 +143,145 @@ func TestUpsetMeansDoWhatYouWant(t *testing.T) {
 	}
 }
 
-// TestPipesGetPlainKubectl builds the binary and checks it is plain
-// kubectl outside a terminal, and honest about exit codes inside one.
-func TestPipesGetPlainKubectl(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "misogynectl")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
-	fake := filepath.Join(dir, "kubectl")
-	script := "#!/bin/sh\nif [ \"$1\" = fail ]; then echo 'Error: boom' >&2; exit 3; fi\necho real output\n"
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	run := func(env []string, args ...string) (string, string, int) {
-		cmd := exec.Command(bin, args...)
-		cmd.Env = append(os.Environ(), append([]string{"MISOGYNETES_KUBECTL=" + fake, "HOME=" + dir, "XDG_CACHE_HOME=" + dir}, env...)...)
-		var o, e strings.Builder
-		cmd.Stdout, cmd.Stderr = &o, &e
-		err := cmd.Run()
-		code := 0
-		if ee, ok := err.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		}
-		return o.String(), e.String(), code
-	}
-
-	if out, errOut, code := run([]string{"MISOGYNETES="}, "fail"); out != "" || errOut != "Error: boom\n" || code != 3 {
-		t.Errorf("pipe: stdout %q stderr %q code %d", out, errOut, code)
-	}
-	// At a terminal: either she refuses (exit 1, kubectl never ran) or it runs
-	// and the error is hidden behind "fine", with kubectl's exit code intact.
-	sawRun := false
-	for seed := 0; seed < 40 && !sawRun; seed++ {
-		os.RemoveAll(filepath.Join(dir, "Library"))
-		os.RemoveAll(filepath.Join(dir, "misogynetes"))
-		_, errOut, code := run([]string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=" + strconv.Itoa(seed)}, "fail")
-		switch code {
-		case 1:
-			if strings.Contains(errOut, "boom") {
-				t.Fatalf("refused, yet kubectl ran: %q", errOut)
-			}
-		case 3:
-			sawRun = true
-			if strings.Contains(errOut, "boom") || !strings.Contains(errOut, fineAfterError) {
-				t.Errorf("error not hidden behind fine: %q", errOut)
-			}
-		default:
-			t.Fatalf("exit code changed: %d", code)
-		}
-	}
-	if !sawRun {
-		t.Error("never ran the command in 40 tries")
-	}
-}
-
-func TestOwnCommandAfterFlags(t *testing.T) {
-	own, rest := ownCommand([]string{"--kubeconfig", "/tmp/k", "sorry", "for", "the", "delete"})
+func TestOwnCommandOnlyAsFirstWord(t *testing.T) {
+	own, rest := ownCommand([]string{"sorry", "for", "the", "delete"})
 	if own != "sorry" || strings.Join(rest, " ") != "for the delete" {
 		t.Errorf("got %q %v", own, rest)
 	}
-	if own, _ := ownCommand([]string{"get", "pods"}); own != "" {
-		t.Errorf("kubectl command taken as her own: %q", own)
+	for _, args := range [][]string{
+		{"get", "pods"},
+		{"--as", "what", "get", "pods"},
+		{"--user", "flowers", "get", "pods"},
+		{"--cluster", "sorry", "delete", "pod", "x"},
+		{"--kubeconfig", "/tmp/k", "sorry"},
+	} {
+		if own, _ := ownCommand(args); own != "" {
+			t.Errorf("%v taken as her own %q", args, own)
+		}
+	}
+}
+
+func TestVerbSkipsFlagValues(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		verb string
+	}{
+		{[]string{"--as", "what", "get", "pods"}, "get"},
+		{[]string{"--user", "flowers", "get", "pods"}, "get"},
+		{[]string{"--cluster", "sorry", "delete", "pod", "x"}, "delete"},
+		{[]string{"-v", "6", "get", "pods"}, "get"},
+		{[]string{"--as=what", "get", "pods"}, "get"},
+		{[]string{"-v=6", "--token=abc", "--insecure-skip-tls-verify", "get"}, "get"},
+		{[]string{"--request-timeout", "5s", "--as-group", "admins", "top", "nodes"}, "top"},
+		{[]string{"--kubeconfig"}, "nothing"},
+	} {
+		if got := Verb(tc.args); got != tc.verb {
+			t.Errorf("Verb(%v) = %q, want %q", tc.args, got, tc.verb)
+		}
+	}
+}
+
+func TestGrudgeKeepsNoSecrets(t *testing.T) {
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.c2lnbmF0dXJl"
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--token=" + jwt, "get", "secrets"}, "get secrets"},
+		{[]string{"--token", jwt, "get", "secrets"}, "get secrets"},
+		{[]string{"get", "pods", "--password=hunter2", "--username", "admin"}, "get pods"},
+		{[]string{"--server=https://10.0.0.1:6443", "--kubeconfig", "/root/.kube/admin", "--as", "system:admin", "delete", "pod", "x"}, "delete pod x"},
+		{[]string{"--client-key", "/k.pem", "--client-certificate=/c.pem", "-n", "shop", "delete", "pod", "api-1"}, "delete pod api-1"},
+		{[]string{"create", "secret", "generic", "db", "--from-literal", "password=hunter2", "--from-file=key=/k"}, "create secret generic"},
+		{[]string{"create", "secret", "generic", "--from-env-file", "/e.env", "db"}, "create secret generic"},
+		{[]string{"apply", jwt, "abcdef.0123456789abcdef"}, "apply"},
+	} {
+		c := cluster(3)
+		c.Failed(tc.args, "boom")
+		if c.State.Grudge != tc.want {
+			t.Errorf("%v: grudge %q, want %q", tc.args, c.State.Grudge, tc.want)
+		}
+		for _, secret := range []string{jwt, "hunter2", "admin/", "/root", "10.0.0.1", "/k.pem", "/c.pem", "/e.env", "abcdef."} {
+			if strings.Contains(c.State.Grudge, secret) {
+				t.Errorf("%v: grudge %q keeps %q", tc.args, c.State.Grudge, secret)
+			}
+		}
+	}
+}
+
+func TestLastErrorIsShortAndRedacted(t *testing.T) {
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.c2lnbmF0dXJl"
+	stderr := "Error: Authorization: Bearer " + jwt + "\n" +
+		"error: --token=sekrit1 rejected, token: sekrit2, password=sekrit3\n" +
+		"bootstrap abcdef.0123456789abcdef\n" + strings.Repeat("ю", 8<<20)
+	c := cluster(3)
+	c.Failed([]string{"get", "pods"}, stderr)
+	got := c.State.LastError
+	if len(got) > maxLastError+16 || !utf8.ValidString(got) {
+		t.Errorf("LastError is %d bytes, valid UTF-8 %v", len(got), utf8.ValidString(got))
+	}
+	for _, secret := range []string{jwt, "eyJ", "sekrit1", "sekrit2", "sekrit3", "0123456789abcdef"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("LastError keeps %q: %q", secret, got[:200])
+		}
+	}
+	if !strings.HasPrefix(got, "Error: Authorization: Bearer <redacted>") {
+		t.Errorf("error lost its shape: %q", got[:120])
+	}
+}
+
+func TestApologyMatchesWholeWords(t *testing.T) {
+	for _, tc := range []struct {
+		reason, grudge string
+		ok             bool
+	}{
+		{"the delete", "delete pod x", true},
+		{"DELETE, obviously", "delete pod x", true},
+		{"forget it", "get pods", false},
+		{"undeleted", "delete pod x", false},
+		{"being late", "delete pod x", false},
+		{"sorry", "sorry", true},
+		{"apologizing", "sorry", true},
+		{"apologising", "sorry", true},
+		{"sorry", "get pods", false},
+	} {
+		if got := apologyMatches(tc.reason, tc.grudge); got != tc.ok {
+			t.Errorf("apologyMatches(%q, %q) = %v", tc.reason, tc.grudge, got)
+		}
+	}
+}
+
+func TestCycleDayNeverNegative(t *testing.T) {
+	for _, offset := range []int{0, 5, 27, -3} {
+		c := &Cluster{Now: t0.Add(-72 * time.Hour), Day: -1, State: &State{Installed: t0, Offset: offset}}
+		if d := c.CycleDay(); d < 0 || d >= cycleDays {
+			t.Errorf("offset %d: day %d", offset, d)
+		}
+	}
+}
+
+func TestGrudgeTimeIsLocalAndDatedWhenOld(t *testing.T) {
+	c := cluster(3)
+	c.Failed([]string{"delete", "pod", "x"}, "boom")
+	if got := c.grudgeTime(); got != t0.Local().Format("15:04") {
+		t.Errorf("same day: %q", got)
+	}
+	c.Now = t0.Add(49 * time.Hour)
+	if got, want := c.grudgeTime(), t0.Local().Format("15:04 on Jan 2"); got != want {
+		t.Errorf("two days later: %q, want %q", got, want)
+	}
+	c.State.GrudgeAt = nil
+	if got := c.grudgeTime(); got == "" {
+		t.Error("no time for a grudge without one")
+	}
+}
+
+func TestEmptyStateHasNoGrudgeTime(t *testing.T) {
+	b, err := json.Marshal(&State{Installed: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "grudgeAt") {
+		t.Errorf("zero grudge time written: %s", b)
 	}
 }

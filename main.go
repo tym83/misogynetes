@@ -23,13 +23,9 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,11 +37,11 @@ func main() {
 }
 
 func run(args []string) int {
-	kubectl := os.Getenv("MISOGYNETES_KUBECTL")
-	if kubectl == "" {
-		kubectl = "kubectl"
-	}
 	if !actsUp() {
+		kubectl, err := resolveKubectl()
+		if err != nil {
+			return wrapperError(err)
+		}
 		return passthrough(kubectl, args)
 	}
 
@@ -59,62 +55,95 @@ func run(args []string) int {
 		statePath = filepath.Join(dir, "misogynetes", "state.json")
 	}
 	now := time.Now()
-	c := &Cluster{Rand: r, Now: now, Day: -1, State: Load(statePath, now, r)}
+	c := &Cluster{Rand: r, Now: now, Day: -1}
 	if d, err := strconv.Atoi(os.Getenv("MISOGYNETES_DAY")); err == nil {
 		c.Day = d
 	}
-	defer Save(statePath, c.State)
-
-	if own, rest := ownCommand(args); own != "" {
-		switch own {
-		case "sorry":
-			reason := strings.TrimPrefix(strings.Join(rest, " "), "for ")
-			say(c.Sorry(reason))
-			return 0
-		case "what", "whats-wrong":
-			say(c.What())
-			return 0
-		case "flowers":
-			say(c.Flowers())
-			return 0
-		}
+	// update runs one step of her reasoning on the freshest state, under a
+	// lock. The lock is never held while kubectl runs.
+	update := func(step func()) {
+		Update(statePath, now, r, func(s *State) {
+			c.State = s
+			step()
+		})
 	}
 
-	plan := c.Before(args)
+	if own, rest := ownCommand(args); own == "about" {
+		fmt.Println(about)
+		return 0
+	} else if own != "" {
+		var lines []string
+		update(func() {
+			switch own {
+			case "sorry":
+				if len(rest) > 0 && rest[0] == "for" {
+					rest = rest[1:]
+				}
+				lines = c.Sorry(strings.Join(rest, " "))
+			case "what", "whats-wrong":
+				lines = c.What()
+			case "flowers":
+				lines = c.Flowers()
+			}
+		})
+		say(lines)
+		return 0
+	}
+
+	kubectl, err := resolveKubectl()
+	if err != nil {
+		return wrapperError(err)
+	}
+	var plan Plan
+	update(func() { plan = c.Before(args) })
 	say(plan.Say)
 	if !plan.Run {
 		return 1
 	}
 
-	var captured bytes.Buffer
-	cmd := exec.Command(kubectl, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, &captured
-	err := cmd.Run()
-	var exit *exec.ExitError
+	cmd := kubectlCommand(kubectl, args)
+	if !holdsStderr(args) {
+		// Interactive or long-running: its stderr is part of the
+		// conversation (prompts, watch warnings), so nothing is hidden.
+		code, err := execute(cmd)
+		if err != nil {
+			return wrapperError(err)
+		}
+		return code
+	}
+
+	held := &holdBack{}
+	cmd.Stderr = held
+	timer := time.AfterFunc(holdTime(), func() { held.release(os.Stderr) })
+	code, err := execute(cmd)
+	timer.Stop()
+	stderr, hidden := held.kept()
 	switch {
-	case err == nil:
-		_, _ = io.Copy(os.Stderr, &captured) // warnings still reach you
-		return 0
-	case errors.As(err, &exit):
-		say(c.Failed(args, captured.String()))
-		return exit.ExitCode()
+	case err != nil:
+		held.release(os.Stderr)
+		return wrapperError(err)
+	case code == 0 || !hidden:
+		held.release(os.Stderr) // warnings, and anything already on its way
+		return code
 	default:
-		say(c.Failed(args, err.Error()))
-		return 1
+		var lines []string
+		update(func() { lines = c.Failed(args, stderr) })
+		say(lines)
+		fmt.Fprintf(os.Stderr, hiddenHint+"\n", code)
+		return code
 	}
 }
 
-// ownCommand finds sorry, what or flowers as the first word that is not a
-// flag, so "misogynectl --kubeconfig x sorry" is still an apology.
+// ownCommand reports her own command (sorry, what, whats-wrong, flowers,
+// about), which counts only as the very first word. Anywhere else it is a
+// kubectl argument: "--as what get pods" is kubectl's business.
 func ownCommand(args []string) (string, []string) {
-	verb := Verb(args)
-	switch verb {
-	case "sorry", "what", "whats-wrong", "flowers":
-		for i, a := range args {
-			if a == verb {
-				return verb, args[i+1:]
-			}
-		}
+	if len(args) == 0 {
+		return "", nil
+	}
+	switch args[0] {
+	case "sorry", "what", "whats-wrong", "flowers", "about":
+		return args[0], args[1:]
 	}
 	return "", nil
 }
@@ -139,16 +168,9 @@ func actsUp() bool {
 }
 
 func passthrough(kubectl string, args []string) int {
-	cmd := exec.Command(kubectl, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return exit.ExitCode()
-	}
+	code, err := execute(kubectlCommand(kubectl, args))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return wrapperError(err)
 	}
-	return 0
+	return code
 }
