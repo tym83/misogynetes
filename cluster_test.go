@@ -194,12 +194,40 @@ func TestPipesGetPlainKubectl(t *testing.T) {
 	}
 }
 
-func TestOwnCommandAfterFlags(t *testing.T) {
-	own, rest := ownCommand([]string{"--kubeconfig", "/tmp/k", "sorry", "for", "the", "delete"})
+func TestOwnCommandOnlyAsFirstWord(t *testing.T) {
+	own, rest := ownCommand([]string{"sorry", "for", "the", "delete"})
 	if own != "sorry" || strings.Join(rest, " ") != "for the delete" {
 		t.Errorf("got %q %v", own, rest)
 	}
-	if own, _ := ownCommand([]string{"get", "pods"}); own != "" {
-		t.Errorf("kubectl command taken as her own: %q", own)
+	for _, args := range [][]string{
+		{"get", "pods"},
+		{"--as", "what", "get", "pods"},
+		{"--user", "flowers", "get", "pods"},
+		{"--cluster", "sorry", "delete", "pod", "x"},
+		{"--kubeconfig", "/tmp/k", "sorry"},
+	} {
+		if own, _ := ownCommand(args); own != "" {
+			t.Errorf("%v taken as her own %q", args, own)
+		}
+	}
+}
+
+func TestVerbSkipsFlagValues(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		verb string
+	}{
+		{[]string{"--as", "what", "get", "pods"}, "get"},
+		{[]string{"--user", "flowers", "get", "pods"}, "get"},
+		{[]string{"--cluster", "sorry", "delete", "pod", "x"}, "delete"},
+		{[]string{"-v", "6", "get", "pods"}, "get"},
+		{[]string{"--as=what", "get", "pods"}, "get"},
+		{[]string{"-v=6", "--token=abc", "--insecure-skip-tls-verify", "get"}, "get"},
+		{[]string{"--request-timeout", "5s", "--as-group", "admins", "top", "nodes"}, "top"},
+		{[]string{"--kubeconfig"}, "nothing"},
+	} {
+		if got := Verb(tc.args); got != tc.verb {
+			t.Errorf("Verb(%v) = %q, want %q", tc.args, got, tc.verb)
+		}
 	}
 }

@@ -104,17 +104,16 @@ func run(args []string) int {
 	}
 }
 
-// ownCommand finds sorry, what or flowers as the first word that is not a
-// flag, so "misogynectl --kubeconfig x sorry" is still an apology.
+// ownCommand reports her own command (sorry, what, whats-wrong, flowers),
+// which counts only as the very first word. Anywhere else it is a kubectl
+// argument: "--as what get pods" is kubectl's business.
 func ownCommand(args []string) (string, []string) {
-	verb := Verb(args)
-	switch verb {
+	if len(args) == 0 {
+		return "", nil
+	}
+	switch args[0] {
 	case "sorry", "what", "whats-wrong", "flowers":
-		for i, a := range args {
-			if a == verb {
-				return verb, args[i+1:]
-			}
-		}
+		return args[0], args[1:]
 	}
 	return "", nil
 }

@@ -71,18 +71,50 @@ func (c *Cluster) pick(lines []string) string {
 	return lines[c.Rand.Intn(len(lines))]
 }
 
-// Verb is the first word of a kubectl command line that is not a flag.
-func Verb(args []string) string {
-	skip := map[string]bool{"-n": true, "--namespace": true, "--context": true, "--kubeconfig": true,
-		"-o": true, "--output": true, "-l": true, "--selector": true, "-f": true, "--filename": true}
+// valueFlags are the kubectl flags that take a value as the next word when
+// written without "=". The global ones come first; a few common per-command
+// ones follow, so that their values are not mistaken for words either.
+var valueFlags = map[string]bool{
+	"--as": true, "--as-group": true, "--as-uid": true, "--cache-dir": true,
+	"--certificate-authority": true, "--client-certificate": true, "--client-key": true,
+	"--cluster": true, "--context": true, "--kubeconfig": true, "--kuberc": true,
+	"-n": true, "--namespace": true, "--password": true, "--profile": true,
+	"--profile-output": true, "--request-timeout": true, "-s": true, "--server": true,
+	"--tls-server-name": true, "--token": true, "--user": true, "--username": true,
+	"-v": true, "--v": true, "--vmodule": true, "--log-dir": true, "--log-file": true,
+	"--log-file-max-size": true, "--log-flush-frequency": true, "--log-backtrace-at": true,
+	"--stderrthreshold": true,
+
+	"-o": true, "--output": true, "-l": true, "--selector": true, "-f": true, "--filename": true,
+	"-c": true, "--container": true, "--field-selector": true, "--image": true,
+	"--from-literal": true, "--from-file": true, "--from-env-file": true, "--type": true,
+}
+
+// Words are the words of a kubectl command line that are not flags or flag
+// values: the verb, the resource, the name and so on.
+func Words(args []string) []string {
+	var words []string
 	for i := 0; i < len(args); i++ {
-		if strings.HasPrefix(args[i], "-") {
-			if skip[args[i]] {
+		a := args[i]
+		switch {
+		case a == "--":
+			return append(words, args[i+1:]...)
+		case strings.HasPrefix(a, "-") && len(a) > 1:
+			if !strings.Contains(a, "=") && valueFlags[a] {
 				i++
 			}
-			continue
+		default:
+			words = append(words, a)
 		}
-		return args[i]
+	}
+	return words
+}
+
+// Verb is the first word of a kubectl command line that is not a flag or a
+// flag's value.
+func Verb(args []string) string {
+	if w := Words(args); len(w) > 0 {
+		return w[0]
 	}
 	return "nothing"
 }
