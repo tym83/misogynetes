@@ -22,8 +22,10 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // cycleDays and pmsFrom place "that time of the month" in a 28-day cycle
@@ -165,28 +167,77 @@ func (c *Cluster) Before(args []string) Plan {
 }
 
 // Failed hides a kubectl error behind "everything's fine" and holds it
-// against the user.
+// against the user. Only a short, redacted form of both is kept.
 func (c *Cluster) Failed(args []string, stderr string) []string {
 	c.State.Mood++
-	c.State.Grudge = strings.Join(withoutConnection(args), " ")
+	c.State.Grudge = grudgeOf(args)
 	c.State.GrudgeAt = c.Now
-	c.State.LastError = strings.TrimSpace(stderr)
+	c.State.LastError = redactError(stderr)
 	c.State.Asked = 0
 	return []string{fineAfterError}
 }
 
-// withoutConnection drops where the command was sent, keeping what was done.
-func withoutConnection(args []string) []string {
-	var out []string
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--kubeconfig", "--context", "--server", "-s", "--token", "--user", "--cluster":
-			i++
+// grudgeWords is how much of a command she remembers: verb, resource, name.
+const grudgeWords = 3
+
+// grudgeOf is what she remembers of a command: the verb, the resource and
+// the name, never a flag or a flag's value, so no token, password, server
+// or kubeconfig ends up in the state file.
+func grudgeOf(args []string) string {
+	var kept []string
+	for _, w := range Words(args) {
+		if len(kept) == grudgeWords {
+			break
+		}
+		if strings.Contains(w, "=") || looksSecret(w) {
 			continue
 		}
-		out = append(out, args[i])
+		kept = append(kept, w)
 	}
-	return out
+	return strings.Join(kept, " ")
+}
+
+var (
+	jwtLike       = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{4,}(\.[A-Za-z0-9_-]*){0,2}`)
+	bootstrapLike = regexp.MustCompile(`\b[a-z0-9]{6}\.[a-z0-9]{16}\b`)
+	longOpaque    = regexp.MustCompile(`^[A-Za-z0-9+/_]{32,}={0,2}$`)
+	bearerValue   = regexp.MustCompile(`(?i)(bearer|basic)\s+[A-Za-z0-9._~+/=-]+`)
+	secretFlag    = regexp.MustCompile(`(?i)(--?(token|password|username|client-key|client-certificate|kubeconfig|server|as|as-group|as-uid|from-literal|from-file|from-env-file)[= ])\S+`)
+	secretField   = regexp.MustCompile(`(?i)\b(token|password|secret)(["']?\s*[:=]\s*["']?)[^\s"',}]+`)
+)
+
+// looksSecret reports a word that looks like a credential rather than a name.
+func looksSecret(w string) bool {
+	return jwtLike.MatchString(w) || bootstrapLike.MatchString(w) || longOpaque.MatchString(w)
+}
+
+// maxLastError is how much of a kubectl error she keeps.
+const maxLastError = 2048
+
+// redactError trims a kubectl error and blanks out anything that looks like
+// a credential before it is written down.
+func redactError(stderr string) string {
+	s := strings.TrimSpace(truncate(stderr, 4*maxLastError))
+	s = bearerValue.ReplaceAllString(s, "$1 <redacted>")
+	s = secretFlag.ReplaceAllString(s, "$1<redacted>")
+	s = secretField.ReplaceAllString(s, "$1$2<redacted>")
+	s = jwtLike.ReplaceAllString(s, "<redacted>")
+	s = bootstrapLike.ReplaceAllString(s, "<redacted>")
+	if len(s) > maxLastError {
+		s = truncate(s, maxLastError) + "\n[...]"
+	}
+	return s
+}
+
+// truncate cuts s to at most n bytes without splitting a character.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // What answers "what's wrong?": nothing, then you-know-what, then the truth.

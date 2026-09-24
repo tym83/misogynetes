@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var t0 = time.Date(2026, 9, 24, 14, 32, 0, 0, time.UTC)
@@ -105,7 +106,7 @@ func TestApologies(t *testing.T) {
 	}
 
 	c.Failed([]string{"--kubeconfig", "/home/me/.kube/config", "-n", "shop", "delete", "pod", "api-1"}, "boom")
-	if c.State.Grudge != "-n shop delete pod api-1" {
+	if c.State.Grudge != "delete pod api-1" {
 		t.Errorf("grudge kept connection details: %q", c.State.Grudge)
 	}
 	if got := c.Sorry(""); got[0] != sorryForWhat || !strings.Contains(got[1], "14:32") {
@@ -229,5 +230,54 @@ func TestVerbSkipsFlagValues(t *testing.T) {
 		if got := Verb(tc.args); got != tc.verb {
 			t.Errorf("Verb(%v) = %q, want %q", tc.args, got, tc.verb)
 		}
+	}
+}
+
+func TestGrudgeKeepsNoSecrets(t *testing.T) {
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.c2lnbmF0dXJl"
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--token=" + jwt, "get", "secrets"}, "get secrets"},
+		{[]string{"--token", jwt, "get", "secrets"}, "get secrets"},
+		{[]string{"get", "pods", "--password=hunter2", "--username", "admin"}, "get pods"},
+		{[]string{"--server=https://10.0.0.1:6443", "--kubeconfig", "/root/.kube/admin", "--as", "system:admin", "delete", "pod", "x"}, "delete pod x"},
+		{[]string{"--client-key", "/k.pem", "--client-certificate=/c.pem", "-n", "shop", "delete", "pod", "api-1"}, "delete pod api-1"},
+		{[]string{"create", "secret", "generic", "db", "--from-literal", "password=hunter2", "--from-file=key=/k"}, "create secret generic"},
+		{[]string{"create", "secret", "generic", "--from-env-file", "/e.env", "db"}, "create secret generic"},
+		{[]string{"apply", jwt, "abcdef.0123456789abcdef"}, "apply"},
+	} {
+		c := cluster(3)
+		c.Failed(tc.args, "boom")
+		if c.State.Grudge != tc.want {
+			t.Errorf("%v: grudge %q, want %q", tc.args, c.State.Grudge, tc.want)
+		}
+		for _, secret := range []string{jwt, "hunter2", "admin/", "/root", "10.0.0.1", "/k.pem", "/c.pem", "/e.env", "abcdef."} {
+			if strings.Contains(c.State.Grudge, secret) {
+				t.Errorf("%v: grudge %q keeps %q", tc.args, c.State.Grudge, secret)
+			}
+		}
+	}
+}
+
+func TestLastErrorIsShortAndRedacted(t *testing.T) {
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.c2lnbmF0dXJl"
+	stderr := "Error: Authorization: Bearer " + jwt + "\n" +
+		"error: --token=sekrit1 rejected, token: sekrit2, password=sekrit3\n" +
+		"bootstrap abcdef.0123456789abcdef\n" + strings.Repeat("ю", 8<<20)
+	c := cluster(3)
+	c.Failed([]string{"get", "pods"}, stderr)
+	got := c.State.LastError
+	if len(got) > maxLastError+16 || !utf8.ValidString(got) {
+		t.Errorf("LastError is %d bytes, valid UTF-8 %v", len(got), utf8.ValidString(got))
+	}
+	for _, secret := range []string{jwt, "eyJ", "sekrit1", "sekrit2", "sekrit3", "0123456789abcdef"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("LastError keeps %q: %q", secret, got[:200])
+		}
+	}
+	if !strings.HasPrefix(got, "Error: Authorization: Bearer <redacted>") {
+		t.Errorf("error lost its shape: %q", got[:120])
 	}
 }

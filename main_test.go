@@ -73,7 +73,7 @@ func newSandbox(t *testing.T, kubectlScript string) *sandbox {
 	t.Helper()
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "kubectl")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"+kubectlScript), 0o755); err != nil {
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho >> \"$0.ran\"\n"+kubectlScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return &sandbox{t: t, dir: dir, bin: binary(t), fake: fake}
@@ -104,6 +104,12 @@ func (s *sandbox) run(env []string, args ...string) (string, string, int) {
 	return o.String(), e.String(), code
 }
 
+// kubectlRan reports whether the fake kubectl ran since the last check.
+func (s *sandbox) kubectlRan() bool {
+	_, err := os.Stat(s.fake + ".ran")
+	return err == nil
+}
+
 // statePath is where misogynectl keeps its state inside the sandbox.
 func (s *sandbox) statePath() string {
 	s.t.Setenv("HOME", s.dir)
@@ -122,9 +128,13 @@ func (s *sandbox) acting(extra []string, args ...string) (string, string, int) {
 	for seed := 0; seed < 60; seed++ {
 		env := append([]string{"MISOGYNETES=always", "MISOGYNETES_DAY=3",
 			"MISOGYNETES_SEED=" + strconv.Itoa(seed)}, extra...)
+		_ = os.Remove(s.fake + ".ran")
 		out, errOut, code := s.run(env, args...)
-		if code == 1 && out == "" && !strings.Contains(errOut, "kubectl ran") {
-			continue // she refused, and kubectl did not run
+		if !s.kubectlRan() {
+			if code != 1 || !strings.Contains(errOut, "\033[35m") {
+				s.t.Fatalf("refused without exit 1 and a word: code %d, stderr %q", code, errOut)
+			}
+			continue
 		}
 		return out, errOut, code
 	}
@@ -146,5 +156,28 @@ func TestFlagValuesAreNotHerCommands(t *testing.T) {
 		if want := "kubectl ran: " + strings.Join(args, " ") + "\n"; out != want || code != 0 {
 			t.Errorf("%v: stdout %q code %d, want %q and 0", args, out, code, want)
 		}
+	}
+}
+
+func TestTokenNeverReachesStateOrWhat(t *testing.T) {
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.c2lnbmF0dXJl"
+	s := newSandbox(t, "echo \"error: the server rejected token $1\" >&2\nexit 1\n")
+	if _, errOut, code := s.acting(nil, "--token="+jwt, "get", "pods"); code != 1 || strings.Contains(errOut, "rejected") {
+		t.Fatalf("stderr %q code %d", errOut, code)
+	}
+	state, err := os.ReadFile(s.statePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(state), "eyJ") {
+		t.Errorf("token in state.json: %s", state)
+	}
+	var said strings.Builder
+	for i := 0; i < 3; i++ {
+		_, errOut, _ := s.run([]string{"MISOGYNETES=always"}, "what")
+		said.WriteString(errOut)
+	}
+	if strings.Contains(said.String(), "eyJ") || !strings.Contains(said.String(), "you ran: get pods") {
+		t.Errorf("what said: %s", said.String())
 	}
 }
