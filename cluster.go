@@ -17,11 +17,8 @@ limitations under the License.
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -290,26 +287,4 @@ func apologyMatches(reason, grudge string) bool {
 // Flowers are nice. They don't change anything.
 func (c *Cluster) Flowers() []string {
 	return []string{flowersNice}
-}
-
-// Load reads the state, creating it on first use with a random cycle offset.
-func Load(path string, now time.Time, r *rand.Rand) *State {
-	s := &State{}
-	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, s) == nil && !s.Installed.IsZero() {
-		return s
-	}
-	return &State{Installed: now, Offset: r.Intn(cycleDays)}
-}
-
-// Save writes the state.
-func Save(path string, s *State) {
-	if path == "" {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return
-	}
-	if b, err := json.MarshalIndent(s, "", "  "); err == nil {
-		_ = os.WriteFile(path, b, 0o600)
-	}
 }

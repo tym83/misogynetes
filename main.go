@@ -59,28 +59,40 @@ func run(args []string) int {
 		statePath = filepath.Join(dir, "misogynetes", "state.json")
 	}
 	now := time.Now()
-	c := &Cluster{Rand: r, Now: now, Day: -1, State: Load(statePath, now, r)}
+	c := &Cluster{Rand: r, Now: now, Day: -1}
 	if d, err := strconv.Atoi(os.Getenv("MISOGYNETES_DAY")); err == nil {
 		c.Day = d
 	}
-	defer Save(statePath, c.State)
-
-	if own, rest := ownCommand(args); own != "" {
-		switch own {
-		case "sorry":
-			reason := strings.TrimPrefix(strings.Join(rest, " "), "for ")
-			say(c.Sorry(reason))
-			return 0
-		case "what", "whats-wrong":
-			say(c.What())
-			return 0
-		case "flowers":
-			say(c.Flowers())
-			return 0
-		}
+	// update runs one step of her reasoning on the freshest state, under a
+	// lock. The lock is never held while kubectl runs.
+	update := func(step func()) {
+		Update(statePath, now, r, func(s *State) {
+			c.State = s
+			step()
+		})
 	}
 
-	plan := c.Before(args)
+	if own, rest := ownCommand(args); own != "" {
+		var lines []string
+		update(func() {
+			switch own {
+			case "sorry":
+				if len(rest) > 0 && rest[0] == "for" {
+					rest = rest[1:]
+				}
+				lines = c.Sorry(strings.Join(rest, " "))
+			case "what", "whats-wrong":
+				lines = c.What()
+			case "flowers":
+				lines = c.Flowers()
+			}
+		})
+		say(lines)
+		return 0
+	}
+
+	var plan Plan
+	update(func() { plan = c.Before(args) })
 	say(plan.Say)
 	if !plan.Run {
 		return 1
@@ -96,10 +108,14 @@ func run(args []string) int {
 		_, _ = io.Copy(os.Stderr, &captured) // warnings still reach you
 		return 0
 	case errors.As(err, &exit):
-		say(c.Failed(args, captured.String()))
+		var lines []string
+		update(func() { lines = c.Failed(args, captured.String()) })
+		say(lines)
 		return exit.ExitCode()
 	default:
-		say(c.Failed(args, err.Error()))
+		var lines []string
+		update(func() { lines = c.Failed(args, err.Error()) })
+		say(lines)
 		return 1
 	}
 }

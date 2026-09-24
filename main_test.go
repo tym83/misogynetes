@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var (
@@ -179,5 +181,74 @@ func TestTokenNeverReachesStateOrWhat(t *testing.T) {
 	}
 	if strings.Contains(said.String(), "eyJ") || !strings.Contains(said.String(), "you ran: get pods") {
 		t.Errorf("what said: %s", said.String())
+	}
+}
+
+func TestParallelRunsLoseNothing(t *testing.T) {
+	s := newSandbox(t, echoKubectl)
+	path := s.statePath()
+	installed := t0.Add(-100 * 24 * time.Hour)
+	at := t0
+	writeState(t, path, &State{Installed: installed, Offset: 7, Mood: 1, Grudge: "delete pod x",
+		GrudgeAt: at, LastError: "boom", BannerShown: true})
+
+	const n = 50
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := s.command([]string{"MISOGYNETES=always"}, "what").Run(); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got State
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("state.json broken: %v\n%s", err, b)
+	}
+	if got.Asked != n || !got.Installed.Equal(installed) || got.Offset != 7 || got.Grudge != "delete pod x" {
+		t.Errorf("lost updates: asked %d of %d, %+v", got.Asked, n, got)
+	}
+}
+
+func TestUnreadableStateIsKeptAndSheIsCalm(t *testing.T) {
+	s := newSandbox(t, echoKubectl)
+	path := s.statePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const broken = `{"installed": "2026-01-01T00:00:00Z", "mood": 3, "grudge": "del`
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for seed := 0; seed < 10; seed++ {
+		_, errOut, _ := s.run([]string{"MISOGYNETES=always", "MISOGYNETES_SEED=" + strconv.Itoa(seed)}, "get", "pods")
+		if strings.Contains(errOut, doWhatYouWant) || strings.Contains(errOut, pmsNotice) {
+			t.Errorf("not calm with an unreadable state: %q", errOut)
+		}
+	}
+	if b, _ := os.ReadFile(path); string(b) != broken {
+		t.Errorf("unreadable state overwritten: %s", b)
+	}
+}
+
+func writeState(t *testing.T, path string, st *State) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
