@@ -155,7 +155,9 @@ func say(lines []string) {
 }
 
 // actsUp: MISOGYNETES=off makes her plain kubectl, MISOGYNETES=always makes
-// her act up even into a pipe; otherwise only a person at a terminal gets it.
+// her act up even into a pipe; otherwise only a person at a terminal gets it,
+// with both stdout and stderr on it: "misogynectl get pods | grep x" is a
+// script, and a script gets plain kubectl.
 func actsUp() bool {
 	switch os.Getenv("MISOGYNETES") {
 	case "off":
@@ -163,7 +165,11 @@ func actsUp() bool {
 	case "always":
 		return true
 	}
-	info, err := os.Stderr.Stat()
+	return terminal(os.Stdout) && terminal(os.Stderr)
+}
+
+func terminal(f *os.File) bool {
+	info, err := f.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 

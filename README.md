@@ -82,8 +82,9 @@ It hides errors from you, which is the joke. It does not hide anything else.
   after 3 seconds reaches you as it comes, too.
 - Her own commands (`sorry`, `what`, `flowers`, `about`) count only as the
   first word. `misogynectl --as what get pods` is kubectl's.
-- It acts up only for a person at a terminal. In pipes, scripts and CI it is
-  plain `kubectl`, errors included. `--help` is kubectl's own help.
+- It acts up only for a person at a terminal, with both stdout and stderr on
+  it. In pipes (`misogynectl get pods | grep web` included), scripts and CI it
+  is plain `kubectl`, errors included. `--help` is kubectl's own help.
 - `MISOGYNETES=off` makes it plain `kubectl` anywhere; `MISOGYNETES=always`
   makes it act up even into a pipe.
 - `MISOGYNETES_KUBECTL` points at a different kubectl.
