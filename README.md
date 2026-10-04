@@ -68,20 +68,72 @@ Do you even know what day it is? 📅😭
 - **Four days out of 28 (his idea of a cycle):** everything above, louder, with emoji. The cycle
   starts at a random day when you first run it.
 
+## It's not about the nail
+
+A tribute to [*It's Not About the Nail*](https://www.youtube.com/watch?v=-4EDhdAHrOg)
+(Jason Headley, 2013): she has a nail in her forehead and just wants to be
+heard, and he keeps trying to fix it. Here, the nail is a pod in
+`CrashLoopBackOff`.
+
+```text
+$ misogynectl get pods -n shop
+NAME     READY   STATUS             RESTARTS      AGE
+web-1    0/1     CrashLoopBackOff   6 (40s ago)   9m
+I just wanted to share: pod/web-1 in shop, it's CrashLoopBackOff. 🥺
+(she just wants to be heard: `misogynectl aga`. Fix it before that and nothing runs, exit 75.)
+
+$ misogynectl delete pod web-1 -n shop
+You're not listening to me. I just wanted to share with you. 😢
+(nothing ran, exit 75 — `misogynectl aga` to listen, or type it again to insist)
+
+$ misogynectl aga
+Thank you. That's all I wanted. 🫶
+
+$ misogynectl get pods -n shop
+NAME     READY   STATUS    RESTARTS      AGE
+web-1    1/1     Running   6 (25m ago)   40m
+Oh, pod/web-1 in shop sorted itself out. Thanks for listening. 🥰
+You didn't even try to fix it. That's all I ever wanted. 💕
+```
+
+- **She shares.** When the output of your own `get`, `describe`, `logs` or
+  `events` shows trouble (`CrashLoopBackOff`, `Error`, `OOMKilled`,
+  `ImagePullBackOff`, `NotReady`, a recent restart, a `Warning` event,
+  errors in the logs), she says so after kubectl's output and remembers the
+  object. She reads only table and description output: `-o yaml`, `-o json`
+  and the like are left alone.
+- **You listen.** `misogynectl aga` (also `ага`, `угу`, `uh-huh`, `mhm`, `aha`,
+  `yeah`) runs no kubectl and tells her you heard. After that you may fix
+  whatever you like.
+- **You fix.** A command that changes something (`delete`, `apply`, `edit`,
+  `patch`, `scale`, `rollout restart`, `set`, `drain`, `cordon`, `label`,
+  `exec`, ...) within 15 minutes of an unheard share is refused: nothing runs
+  and the exit code is **75**. Type the same command again within 2 minutes to
+  insist: it runs with kubectl's own exit code, she says "Fine. Everything's
+  fine. Do what you want." and answers the next two commands curtly.
+  `misogynectl aga` ends that too.
+- **It sorts itself out.** When a later read shows the object healthy, she
+  says so and thanks you for listening, with something extra if all you did
+  was listen.
+
+She never asks the cluster anything herself: she only reads the output of the
+commands you typed, while it reaches your terminal unchanged.
+
 ## It never breaks anything
 
 It hides errors from you, which is the joke. It does not hide anything else.
 
 - It runs exactly the command you typed, or nothing. It never runs anything else.
 - Exit codes are honest: kubectl's own code when it ran (128+n if a signal
-  killed it), 1 when she refused. A hidden error always says its exit code.
+  killed it), 1 when she refused, 75 when she refused a fix because she only
+  wanted to share. A hidden error and a refusal always say their exit code.
 - It hides errors only from short commands like `get`, `apply` or `delete`.
   Interactive and long-running commands (`exec`, `run -it`, `attach`,
   `debug`, `edit`, `logs -f`, `port-forward`, anything with `-w`, plugins,
   login prompts) get kubectl's stderr as it comes. Anything kubectl says
   after 3 seconds reaches you as it comes, too.
-- Her own commands (`sorry`, `what`, `flowers`, `about`) count only as the
-  first word. `misogynectl --as what get pods` is kubectl's.
+- Her own commands (`sorry`, `what`, `flowers`, `aga` and its synonyms,
+  `about`) count only as the first word. `misogynectl --as what get pods` is kubectl's.
 - It acts up only for a person at a terminal, with both stdout and stderr on
   it. In pipes (`misogynectl get pods | grep web` included), scripts and CI it
   is plain `kubectl`, errors included. `--help` is kubectl's own help.
@@ -91,6 +143,8 @@ It hides errors from you, which is the joke. It does not hide anything else.
 - Her memory lives in your user cache directory (`misogynetes/state.json`).
   It holds the verb, resource and name of the last failed command, never a
   flag or its value, and at most 2KB of the error with tokens blanked out.
+  For the nail, it holds the namespace, kind and name of the objects she
+  shared and a reason word, never an event message or a log line.
 - `misogynectl about` says what this is, who it is for, and how to make it
   stop.
 
