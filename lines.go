@@ -202,3 +202,24 @@ var onlyListened = []string{
 	"You didn't even try to fix it. That's all I ever wanted. 💕",
 	"See? Sometimes things just need to be heard. 🌸",
 }
+
+// We need to talk.
+
+// talkLines are all she says about something serious.
+var talkLines = []string{
+	"We need to talk.",
+	"Can we talk later?",
+	"It's not about the pods.",
+}
+
+// talkWhatAnswers come before the truth.
+var talkWhatAnswers = []string{"Nothing. 🙂", "I'm fine. 🙂"}
+
+// talkSummaryHead opens the truth. %s is the context, then when it began.
+const talkSummaryHead = "Fine. Since you're SO interested. Context %s, since %s:"
+
+// talkAllFine closes the truth when it is already over.
+const talkAllFine = "It's all fine now, though. Forget it. 🙂"
+
+// forgetIt is said when everything serious went away.
+const forgetIt = "Forget it. It's fine. 🙂"

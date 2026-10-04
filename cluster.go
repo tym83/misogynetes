@@ -49,6 +49,11 @@ type State struct {
 	Hurt    *Hurt   `json:"hurt,omitempty"`    // the fix she refused
 	Sulking bool    `json:"sulking,omitempty"` // since you insisted, until "aga"
 	Ignored int     `json:"ignored,omitempty"` // commands in a row that ignored her
+
+	// She comes running.
+	NaggedAt  *time.Time `json:"naggedAt,omitempty"`  // when she last brought it up
+	Talk      *Talk      `json:"talk,omitempty"`      // "we need to talk"
+	LeftAlone bool       `json:"leftAlone,omitempty"` // "leave me alone": no watcher
 }
 
 // Cluster decides how she reacts.
@@ -254,6 +259,9 @@ func truncate(s string, n int) string {
 
 // What answers "what's wrong?": nothing, then you-know-what, then the truth.
 func (c *Cluster) What() []string {
+	if c.State.Talk != nil {
+		return c.talkWhat()
+	}
 	if c.State.Grudge == "" {
 		return []string{whatAnswers[0]}
 	}
@@ -286,7 +294,8 @@ func (c *Cluster) Sorry(reason string) []string {
 	}
 	*c.State = State{Installed: c.State.Installed, Offset: c.State.Offset, BannerShown: true,
 		Shared: c.State.Shared, Hurt: c.State.Hurt,
-		Sulking: c.State.Sulking, Ignored: c.State.Ignored}
+		Sulking: c.State.Sulking, Ignored: c.State.Ignored,
+		NaggedAt: c.State.NaggedAt, Talk: c.State.Talk, LeftAlone: c.State.LeftAlone}
 	return []string{apologyAccepted}
 }
 
@@ -320,7 +329,12 @@ func (c *Cluster) grudgeTime() string {
 	if c.State.GrudgeAt == nil {
 		return "some point"
 	}
-	at, now := c.State.GrudgeAt.Local(), c.Now.Local()
+	return c.when(*c.State.GrudgeAt)
+}
+
+// when is a time in local time, with the date if it was not today.
+func (c *Cluster) when(t time.Time) string {
+	at, now := t.Local(), c.Now.Local()
 	if y, m, d := at.Date(); y == now.Year() && m == now.Month() && d == now.Day() {
 		return at.Format("15:04")
 	}

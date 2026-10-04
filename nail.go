@@ -84,6 +84,9 @@ func fixing(args []string) bool {
 // unheard reports a problem she shared that you have not listened to. It
 // does not go away with time, only with "aga" (or after forgetAfter).
 func (c *Cluster) unheard() bool {
+	if t := c.State.Talk; t != nil && !t.Done {
+		return true
+	}
 	for _, s := range c.State.Shared {
 		if !s.Heard {
 			return true
@@ -124,11 +127,26 @@ func (c *Cluster) Remind() []string {
 	if c.State.Sulking {
 		lines = append(lines, c.pick(curtLines))
 	}
+	return append(lines, c.nag()...)
+}
+
+// nag is the reminder itself, on a command or when she comes running.
+func (c *Cluster) nag() []string {
 	waiting := c.waiting()
+	talk := c.State.Talk != nil && !c.State.Talk.Done
+	if len(waiting) == 0 && !talk {
+		return nil
+	}
+	c.State.Ignored++
+	c.State.NaggedAt = c.nowPtr()
+	var lines []string
+	if talk {
+		// She does not say what it is about.
+		lines = append(lines, c.pick(talkLines))
+	}
 	if len(waiting) == 0 {
 		return lines
 	}
-	c.State.Ignored++
 	var line string
 	switch n := c.State.Ignored; {
 	case n <= len(reminders):
@@ -166,6 +184,12 @@ func (c *Cluster) Aga() []string {
 	sulking := c.State.Sulking || c.State.Hurt != nil
 	unheard := c.unheard()
 	c.State.Sulking, c.State.Hurt, c.State.Ignored = false, nil, 0
+	if t := c.State.Talk; t != nil {
+		t.Done = true
+		if t.Fine {
+			c.State.Talk = nil
+		}
+	}
 	var healed []string
 	kept := c.State.Shared[:0]
 	for _, s := range c.State.Shared {
@@ -200,10 +224,15 @@ func (c *Cluster) Aga() []string {
 // Observe takes in what she saw in the output of your read command: new
 // trouble she shares, remembered trouble that sorted itself out.
 func (c *Cluster) Observe(args []string, out string) []string {
+	return c.observe(Notice(args, out, c.Now))
+}
+
+// observe takes in sightings, from your commands or from her own looking.
+func (c *Cluster) observe(sightings []Sighting) []string {
 	c.forget()
 	var shared []Share
 	var lines []string
-	for _, s := range Notice(args, out, c.Now) {
+	for _, s := range sightings {
 		i := c.find(s.Object)
 		var known *Share
 		if i >= 0 {
