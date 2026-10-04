@@ -133,14 +133,78 @@ You didn't even try to fix it. That's all I ever wanted. 💕
   was listen. If you never listened, it is "sorted itself out. Not that you'd
   notice.", and she still wants to be heard about it until `aga`.
 
-She never asks the cluster anything herself: she only reads the output of the
-commands you typed, while it reaches your terminal unchanged.
+She reads along with the output of the commands you typed, which reaches
+your terminal unchanged. And she does not wait for you to look.
+
+## She comes running
+
+The first command you type at a terminal starts her watcher in the
+background: one per user and context, detached, at low priority. Every 30
+seconds (`MISOGYNETES_POLL`, at least 5s, with backoff on errors) she looks at
+the pods, nodes, Warning events, volume claims and deployments of the
+context's namespace (`MISOGYNETES_WATCH_ALL=1` for all namespaces). Whatever
+she finds, she tells you right away, by writing to the terminal you started
+her from, in the middle of whatever you were doing:
+
+```text
+$ vim deploy.yaml
+
+I just wanted to share: pod/web-1, it's CrashLoopBackOff. 🥺
+(she just wants to be heard: `misogynectl aga`. Until then she keeps bringing it up, and a fix does not run: exit 75.)
+```
+
+Then every 3 minutes (`MISOGYNETES_NAG`, at least 1 minute), louder each
+time, until you say `aga`. If the API server is unreachable, that is a
+complaint too. `MISOGYNETES_NOTIFY=1` also sends each one as a macOS
+notification.
+
+- `misogynectl leave-me-alone` stops her watcher, and she takes it
+  personally. It stays stopped until `misogynectl come-back`.
+- It also stops on `MISOGYNETES=off`, when the terminal goes away or no longer
+  belongs to you, and after 12 hours. `MISOGYNETES_WATCH=off` keeps it from
+  starting at all.
+- Scripts, pipes and CI never start it.
+
+## We need to talk
+
+When something is seriously wrong (a node `NotReady`, the API server gone or
+answering with server errors, three or more pods failing in one namespace,
+an out-of-memory or volume-mount storm, a claim `Lost` or `Pending` for more
+than 10 minutes, a deployment with no replicas available, certificate
+warnings), she says only this, and nothing more:
+
+```text
+We need to talk.
+```
+
+```text
+$ misogynectl what
+Nothing. 🙂
+$ misogynectl what
+I'm fine. 🙂
+$ misogynectl what
+Fine. Since you're SO interested. Context prod, since 14:02:
+  • node/node-2: node NotReady, since 14:02 → kubectl --context prod describe node node-2
+  • deployment/api: 0/3 replicas available, since 14:02 → kubectl --context prod rollout status deployment/api
+```
+
+The third answer is the truth: every affected object, what is wrong, since
+when she has seen it, and the read-only command to look further. The joke is
+the wait, never the facts. Until the talk happens (or you say `aga`), fixes
+are refused as with the nail. When everything is healthy again, she says
+"Forget it. It's fine."
 
 ## It never breaks anything
 
 It hides errors from you, which is the joke. It does not hide anything else.
 
-- It runs exactly the command you typed, or nothing. It never runs anything else.
+- It runs exactly the command you typed, or nothing. It never runs anything
+  else for you.
+- On her own, her watcher only reads: `get` of pods, nodes, Warning events,
+  claims and deployments, every call pinned to an explicit `--context`. She
+  never reads secrets or configmaps and never runs a command that changes
+  anything. What she writes down from it is the same as for the nail: names
+  and reason words, never messages or field values.
 - Exit codes are honest: kubectl's own code when it ran (128+n if a signal
   killed it), 1 when she refused, 75 when she refused a fix because she only
   wanted to share. A hidden error and a refusal always say their exit code.
@@ -150,12 +214,13 @@ It hides errors from you, which is the joke. It does not hide anything else.
   login prompts) get kubectl's stderr as it comes. Anything kubectl says
   after 3 seconds reaches you as it comes, too.
 - Her own commands (`sorry`, `what`, `flowers`, `aga` and its synonyms,
-  `about`) count only as the first word. `misogynectl --as what get pods` is kubectl's.
+  `leave-me-alone`, `come-back`, `about`) count only as the first word. `misogynectl --as what get pods` is kubectl's.
 - It acts up only for a person at a terminal, with both stdout and stderr on
   it. In pipes (`misogynectl get pods | grep web` included), scripts and CI it
   is plain `kubectl`, errors included. `--help` is kubectl's own help.
-- `MISOGYNETES=off` makes it plain `kubectl` anywhere; `MISOGYNETES=always`
-  makes it act up even into a pipe.
+- `MISOGYNETES=off` makes it plain `kubectl` anywhere and stops her watcher;
+  `MISOGYNETES=always` makes it act up even into a pipe (her watcher still
+  starts only at a real terminal).
 - `MISOGYNETES_KUBECTL` points at a different kubectl.
 - Her memory lives in your user cache directory (`misogynetes/state.json`).
   It holds the verb, resource and name of the last failed command, never a
