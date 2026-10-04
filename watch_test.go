@@ -251,8 +251,12 @@ func TestUnreachableIsAComplaintWithBackoff(t *testing.T) {
 	// Back: it sorted itself out, and the talk is off.
 	f.fail = ""
 	said = tw.at(t, 10*tw.Poll)
-	if !contains(said, forgetIt) || !contains(said, "sorted itself out") {
+	if !contains(said, "sorted itself out") {
 		t.Errorf("back: %q", said)
+	}
+	said = tw.at(t, 10*tw.Poll+calmFor)
+	if !contains(said, forgetIt) {
+		t.Errorf("back for a minute: %q", said)
 	}
 }
 
@@ -295,7 +299,8 @@ func TestWeNeedToTalkThenWhatThreeTimes(t *testing.T) {
 
 	// Healthy again: "Forget it." and the talk is over.
 	f.out["nodes"] = readyNodes
-	said = tw.at(t, tw.Poll)
+	tw.at(t, tw.Poll)
+	said = tw.at(t, tw.Poll+calmFor)
 	if !contains(said, forgetIt) {
 		t.Errorf("healthy again: %q", said)
 	}

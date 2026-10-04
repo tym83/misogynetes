@@ -37,6 +37,9 @@ type Talk struct {
 	Asked   int        `json:"asked,omitempty"`
 	Done    bool       `json:"done,omitempty"` // talked it through, or you said "aga"
 	Fine    bool       `json:"fine,omitempty"` // everything is healthy again
+	// ClearSince is when her looks stopped finding anything serious; it
+	// is only "fine" once that has lasted calmFor.
+	ClearSince *time.Time `json:"clearSince,omitempty"`
 }
 
 // TalkItem is one serious thing, as accurate as she can make it.
@@ -53,6 +56,11 @@ const (
 	pvcPendingFor = 10 * time.Minute
 	// deployGrace is how old a deployment with nothing available must be.
 	deployGrace = 2 * time.Minute
+	// calmFor is how long everything must look fine before she says so.
+	// A crash loop flickers: between restarts a pod is Running and its
+	// deployment briefly has replicas available, and one of three
+	// failing pods is often mid-restart. One clear look is not "fine".
+	calmFor = time.Minute
 )
 
 // apiserver is how the API server is remembered.
@@ -213,6 +221,12 @@ func (c *Cluster) updateTalk(context string, items []TalkItem) []string {
 		if t == nil || t.Fine {
 			return nil
 		}
+		if t.ClearSince == nil {
+			t.ClearSince = c.nowPtr()
+		}
+		if c.Now.Sub(*t.ClearSince) < calmFor {
+			return nil
+		}
 		t.Fine = true
 		if t.Done {
 			c.State.Talk = nil
@@ -239,7 +253,7 @@ func (c *Cluster) updateTalk(context string, items []TalkItem) []string {
 			news = true
 		}
 	}
-	t.Items, t.Fine, t.Context = items, false, context
+	t.Items, t.Fine, t.Context, t.ClearSince = items, false, context, nil
 	if news && t.Done {
 		t.Done, t.Asked = false, 0
 		return []string{c.pick(talkLines)}

@@ -107,6 +107,10 @@ func TestTalkHealedBeforeItHappened(t *testing.T) {
 	items := []TalkItem{{Object: "/node/node-2", Why: "node NotReady"}}
 	c.updateTalk("prod", items)
 	c.Now = t0.Add(time.Minute)
+	if got := c.updateTalk("prod", nil); len(got) != 0 {
+		t.Fatalf("fine after one clear look: %q", got)
+	}
+	c.Now = t0.Add(time.Minute + calmFor)
 	if got := c.updateTalk("prod", nil); len(got) != 1 || got[0] != forgetIt || c.State.Talk == nil {
 		t.Fatalf("healed: %q %+v", got, c.State.Talk)
 	}
@@ -126,7 +130,42 @@ func TestTalkHealedBeforeItHappened(t *testing.T) {
 		t.Errorf("aga: %+v", c.State.Talk)
 	}
 	c.updateTalk("prod", nil)
+	c.Now = c.Now.Add(calmFor)
+	c.updateTalk("prod", nil)
 	if c.State.Talk != nil {
 		t.Errorf("heard and healed, still kept: %+v", c.State.Talk)
+	}
+}
+
+// A crash loop flickers: between restarts its deployment briefly has a
+// replica available, and one of three failing pods is mid-restart. A clear
+// look in between is not "fine", and the talk does not start over.
+func TestTalkFlickerIsNotFine(t *testing.T) {
+	c := cluster(3)
+	items := []TalkItem{{Object: "shop/deployment/crash", Why: "0/1 replicas available"}}
+	if got := c.updateTalk("prod", items); len(got) != 1 {
+		t.Fatalf("no talk: %q", got)
+	}
+	c.Aga()
+	for i := 1; i <= 6; i++ {
+		c.Now = t0.Add(time.Duration(i) * 30 * time.Second)
+		var got []string
+		if i%2 == 1 {
+			got = c.updateTalk("prod", nil)
+		} else {
+			got = c.updateTalk("prod", items)
+		}
+		if len(got) != 0 {
+			t.Fatalf("look %d: flicker made her say %q", i, got)
+		}
+	}
+	if c.State.Talk == nil || !c.State.Talk.Done || c.State.Talk.Fine {
+		t.Fatalf("talk after flicker: %+v", c.State.Talk)
+	}
+	c.Now = c.Now.Add(30 * time.Second)
+	c.updateTalk("prod", nil)
+	c.Now = c.Now.Add(calmFor)
+	if got := c.updateTalk("prod", nil); len(got) != 1 || got[0] != forgetIt {
+		t.Errorf("calm for a minute: %q", got)
 	}
 }

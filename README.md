@@ -191,7 +191,8 @@ Fine. Since you're SO interested. Context prod, since 14:02:
 The third answer is the truth: every affected object, what is wrong, since
 when she has seen it, and the read-only command to look further. The joke is
 the wait, never the facts. Until the talk happens (or you say `aga`), fixes
-are refused as with the nail. When everything is healthy again, she says
+are refused as with the nail. When everything has stayed healthy for a
+minute (a crash loop flickers, so one clear look is not enough), she says
 "Forget it. It's fine."
 
 ## Other admins
