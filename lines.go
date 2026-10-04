@@ -31,7 +31,7 @@ It runs exactly the kubectl command you typed, or nothing. Never anything else.
 On her own she only reads: get pods, nodes, Warning events, PVCs and deployments, pinned to one --context.
 Exit codes are kubectl's own when it ran, 1 when she refused, 75 when she only wanted to share.
 In pipes, scripts and CI it is plain kubectl. ` + "`--help`" + ` is kubectl's own help.
-Her own commands, as the first word: sorry, what, flowers, aga (uh-huh), leave-me-alone, come-back, about.
+Her own commands, as the first word: sorry, what, flowers, aga (uh-huh), who, leave-me-alone, come-back, about.
 Source: https://github.com/tym83/misogynetes`
 
 // quotes are the quotes he imagines she keeps reposting.
@@ -238,4 +238,34 @@ const leftAloneHint = "(her watcher is stopped and will not start again — `mis
 const (
 	cameBack  = "I knew you'd miss me. 🥰 (She'll start watching from your next command.)"
 	neverLeft = "I never left. 🙂"
+)
+
+// Other admins. {who} is the field manager, {obj} the object, {when} the
+// time, {ago} how long ago, {fields} what changed, {how} the kubectl command.
+
+var helmLines = []string{
+	"{who} was here at {when}. He upgraded {obj}. 😌 We rolled out together.",
+	"{who} came by {ago}. He touched {fields} on {obj}. He always knows what to change. 😌",
+}
+
+var gitopsLines = []string{
+	"{who} synced {obj} again at {when}. He never forgets. 💅",
+	"{who} checked on {obj} {ago}. Every few minutes, actually. Some people care. 💅",
+}
+
+var kubectlLines = []string{
+	"Someone ran `{how}` on {obj} {ago}. He changed {fields}. I didn't say no. 😏",
+	"Somebody else did `{how}` on {obj} at {when}. {fields}. You never do that for me. 🙄",
+}
+
+var suitorLines = []string{
+	"{who} was with {obj} at {when}. He changed {fields}. Just a friend. 😌",
+	"{who} spent some time on {obj} {ago}. We have a connection. ✨",
+}
+
+// Answers to "who".
+const (
+	nobody      = "Nobody. 🙂"
+	justAFriend = "Nobody. Just a friend. 🙂"
+	whoTruth    = "Fine. Since you're SO interested. In the last 24 hours:"
 )

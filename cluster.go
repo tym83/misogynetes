@@ -54,6 +54,12 @@ type State struct {
 	NaggedAt  *time.Time `json:"naggedAt,omitempty"`  // when she last brought it up
 	Talk      *Talk      `json:"talk,omitempty"`      // "we need to talk"
 	LeftAlone bool       `json:"leftAlone,omitempty"` // "leave me alone": no watcher
+
+	// Other admins.
+	Suitors   []FieldEntry `json:"suitors,omitempty"`   // recent changes by others
+	Mine      []Mine       `json:"mine,omitempty"`      // your own changes
+	JealousAt *time.Time   `json:"jealousAt,omitempty"` // her last jealous remark
+	WhoAsked  int          `json:"whoAsked,omitempty"`
 }
 
 // Cluster decides how she reacts.
@@ -151,6 +157,9 @@ func (c *Cluster) Before(args []string) Plan {
 	}
 	if plan, ok := c.beforeNail(args, say); ok {
 		return plan
+	}
+	if line := c.jealous(args); line != "" {
+		say = append(say, line)
 	}
 	switch {
 	case c.PMS():
@@ -295,7 +304,8 @@ func (c *Cluster) Sorry(reason string) []string {
 	*c.State = State{Installed: c.State.Installed, Offset: c.State.Offset, BannerShown: true,
 		Shared: c.State.Shared, Hurt: c.State.Hurt,
 		Sulking: c.State.Sulking, Ignored: c.State.Ignored,
-		NaggedAt: c.State.NaggedAt, Talk: c.State.Talk, LeftAlone: c.State.LeftAlone}
+		NaggedAt: c.State.NaggedAt, Talk: c.State.Talk, LeftAlone: c.State.LeftAlone,
+		Suitors: c.State.Suitors, Mine: c.State.Mine, JealousAt: c.State.JealousAt, WhoAsked: c.State.WhoAsked}
 	return []string{apologyAccepted}
 }
 

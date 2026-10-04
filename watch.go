@@ -123,6 +123,13 @@ func (w *Watcher) Tick() bool {
 		if snap != nil {
 			lines = append(lines, c.observe(snap.sightings())...)
 			lines = append(lines, c.updateTalk(w.Context, Classify(*snap))...)
+			if snap.APIError == "" {
+				var changes []FieldEntry
+				for _, d := range snap.Deploys {
+					changes = append(changes, d.Fields...)
+				}
+				c.noteSuitors(changes)
+			}
 			if len(lines) > 0 {
 				st.NaggedAt = c.nowPtr()
 			}
@@ -214,7 +221,7 @@ func (w *Watcher) look() Snapshot {
 	if out, ok := get("pvc"); ok {
 		snap.PVCs = parsePVCs(out, "")
 	}
-	if out, ok := get("deployments", "-o", "json"); ok {
+	if out, ok := get("deployments", "-o", "json", "--show-managed-fields"); ok {
 		snap.Deploys = parseDeploys(out, w.All, w.Now())
 	}
 	return snap

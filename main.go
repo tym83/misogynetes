@@ -95,6 +95,8 @@ func run(args []string) int {
 				lines = c.LeaveMeAlone()
 			case "come-back":
 				lines = c.ComeBack()
+			case "who":
+				lines = c.Who()
 			}
 			if own == "sorry" || own == "flowers" {
 				lines = append(lines, c.Remind()...)
@@ -113,7 +115,12 @@ func run(args []string) int {
 	}
 	var plan Plan
 	leftAlone := false
-	update(func() { plan, leftAlone = c.Before(args), c.State.LeftAlone })
+	update(func() {
+		plan, leftAlone = c.Before(args), c.State.LeftAlone
+		if plan.Run {
+			c.noteMine(args)
+		}
+	})
 	say(plan.Say)
 	if !leftAlone && terminal(os.Stdout) && terminal(os.Stderr) {
 		ensureWatcher(args, filepath.Dir(statePath))
@@ -182,7 +189,7 @@ func ownCommand(args []string) (string, []string) {
 		return "", nil
 	}
 	switch args[0] {
-	case "sorry", "what", "whats-wrong", "what's", "flowers", "about", "leave-me-alone", "come-back":
+	case "sorry", "what", "whats-wrong", "what's", "flowers", "about", "leave-me-alone", "come-back", "who":
 		return args[0], args[1:]
 	case "aga", "ага", "угу", "uh-huh", "mhm", "aha", "yeah":
 		return "aga", args[1:]

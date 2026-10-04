@@ -89,6 +89,7 @@ type DeployRow struct {
 	Want      int
 	Available int
 	Age       time.Duration
+	Fields    []FieldEntry // who changed it, see suitors
 }
 
 // why strips "it's " from a sighting's reason.
@@ -362,9 +363,10 @@ func parsePVCs(out, ns string) []PVCRow {
 type deployList struct {
 	Items []struct {
 		Metadata struct {
-			Name              string    `json:"name"`
-			Namespace         string    `json:"namespace"`
-			CreationTimestamp time.Time `json:"creationTimestamp"`
+			Name              string         `json:"name"`
+			Namespace         string         `json:"namespace"`
+			CreationTimestamp time.Time      `json:"creationTimestamp"`
+			ManagedFields     []managedField `json:"managedFields"`
 		} `json:"metadata"`
 		Spec struct {
 			Replicas *int `json:"replicas"`
@@ -397,7 +399,7 @@ func parseDeploys(out string, allNS bool, now time.Time) []DeployRow {
 			want = *it.Spec.Replicas
 		}
 		rows = append(rows, DeployRow{Object: obj, Want: want, Available: it.Status.AvailableReplicas,
-			Age: now.Sub(it.Metadata.CreationTimestamp)})
+			Age: now.Sub(it.Metadata.CreationTimestamp), Fields: fieldEntries(obj, it.Metadata.ManagedFields)})
 	}
 	return rows
 }
