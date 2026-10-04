@@ -28,9 +28,10 @@ To apologize: ` + "`misogynectl sorry for <what you did>`" + `. To make it stop:
 const about = banner + `
 
 It runs exactly the kubectl command you typed, or nothing. Never anything else.
+On her own she only reads: get pods, nodes, Warning events, PVCs and deployments, pinned to one --context.
 Exit codes are kubectl's own when it ran, 1 when she refused, 75 when she only wanted to share.
 In pipes, scripts and CI it is plain kubectl. ` + "`--help`" + ` is kubectl's own help.
-Her own commands, as the first word: sorry, what, flowers, aga (uh-huh), about.
+Her own commands, as the first word: sorry, what, flowers, aga (uh-huh), leave-me-alone, come-back, about.
 Source: https://github.com/tym83/misogynetes`
 
 // quotes are the quotes he imagines she keeps reposting.
@@ -223,3 +224,18 @@ const talkAllFine = "It's all fine now, though. Forget it. 🙂"
 
 // forgetIt is said when everything serious went away.
 const forgetIt = "Forget it. It's fine. 🙂"
+
+// Leave me alone.
+var leaveLines = []string{
+	"Fine. I'll leave you alone. Like you wanted. 🙂",
+	"Oh. Okay. I didn't know I was bothering you. 🥲",
+	"Wow. Okay. Noted. 🙂",
+}
+
+// leftAloneHint says plainly what happened.
+const leftAloneHint = "(her watcher is stopped and will not start again — `misogynectl come-back` if you miss her)"
+
+const (
+	cameBack  = "I knew you'd miss me. 🥰 (She'll start watching from your next command.)"
+	neverLeft = "I never left. 🙂"
+)
