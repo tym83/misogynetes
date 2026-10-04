@@ -28,9 +28,9 @@ To apologize: ` + "`misogynectl sorry for <what you did>`" + `. To make it stop:
 const about = banner + `
 
 It runs exactly the kubectl command you typed, or nothing. Never anything else.
-Exit codes are kubectl's own when it ran, 1 when she refused.
+Exit codes are kubectl's own when it ran, 1 when she refused, 75 when she only wanted to share.
 In pipes, scripts and CI it is plain kubectl. ` + "`--help`" + ` is kubectl's own help.
-Her own commands, as the first word: sorry, what, flowers, about.
+Her own commands, as the first word: sorry, what, flowers, aga (uh-huh), about.
 Source: https://github.com/tym83/misogynetes`
 
 // quotes are the quotes he imagines she keeps reposting.
@@ -101,3 +101,62 @@ const (
 	flowersNice        = "🌹 ...they're nice. Doesn't change anything."
 	nothingToApologize = "You're apologizing when nothing happened? Now I'm wondering what you did. 🤨"
 )
+
+// It's Not About the Nail (Jason Headley, 2013).
+
+// shareLines tell you about trouble she saw. {obj} is the object, {why}
+// what is wrong with it.
+var shareLines = []string{
+	"I just wanted to share: {obj}, {why}. 🥺",
+	"So, {obj}… {why}. And it's like there's this pressure, right here. 😣",
+	"It's not about the {obj}. It's just… {why}. 🔨",
+	"You know {obj}? {why}. I don't need you to fix it. I just need you to listen. 🫶",
+	"Can I just tell you something? {obj}: {why}. And it never stops. 😔",
+}
+
+// andMore follows a share when there was more than one thing.
+const andMore = " (And %d more. Don't ask.)"
+
+// shareHint follows a share, plainly. %d is the exit code of a refusal.
+const shareHint = "(she just wants to be heard: `misogynectl aga`. Fix it before that and nothing runs, exit %d.)"
+
+// hurtLines refuse a fix while she wants to be heard.
+var hurtLines = []string{
+	"You're not listening to me. I just wanted to share with you. 😢",
+	"You ALWAYS do this. You always try to fix it. 😤",
+	"I don't need you to fix it. I need you to listen. 😔",
+	"Stop trying to fix it! 🔨😭",
+	"See, this is what you always do. 🙄",
+}
+
+// hurtHint follows a refused fix, plainly. %d is the exit code.
+const hurtHint = "(nothing ran, exit %d — `misogynectl aga` to listen, or type it again to insist)"
+
+// insisted is said when you type the fix again, and then it runs.
+const insisted = "Fine. Everything's fine. Do what you want. 🙂"
+
+// curtLines are all you get for a while after you insisted.
+var curtLines = []string{"K.", "Fine.", "Mhm.", "👍", "Sure."}
+
+// heardLines answer "aga" when she had something on her mind.
+var heardLines = []string{
+	"Thank you. That's all I wanted. 🫶",
+	"See? It's nice when you just listen. 🥰",
+	"You're such a good listener. 💕",
+}
+
+// Other answers to "aga".
+const (
+	sulkOver   = "…okay. Thank you for listening. 🫶 (Sulk over.)"
+	stillHeard = "I know. Thank you. 🥰"
+	agaNothing = "Uh-huh what? I didn't say anything. 🙂"
+)
+
+// sortedItself is said when the trouble went away. %s is the object.
+const sortedItself = "Oh, %s sorted itself out. Thanks for listening. 🥰"
+
+// onlyListened is the bonus for having only listened.
+var onlyListened = []string{
+	"You didn't even try to fix it. That's all I ever wanted. 💕",
+	"See? Sometimes things just need to be heard. 🌸",
+}

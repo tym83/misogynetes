@@ -43,6 +43,11 @@ type State struct {
 	LastError   string     `json:"lastError,omitempty"`
 	Asked       int        `json:"asked"`
 	BannerShown bool       `json:"bannerShown"`
+
+	// It's not about the nail.
+	Shared []Share `json:"shared,omitempty"` // problems she told you about
+	Hurt   *Hurt   `json:"hurt,omitempty"`   // the fix she refused
+	Curt   int     `json:"curt,omitempty"`   // curt replies still to come
 }
 
 // Cluster decides how she reacts.
@@ -123,9 +128,11 @@ func Verb(args []string) string {
 }
 
 // Plan is what she says before a command, and whether she runs it at all.
+// Code is the exit code when she does not; zero means 1.
 type Plan struct {
-	Say []string
-	Run bool
+	Say  []string
+	Run  bool
+	Code int
 }
 
 // Before decides how to meet a command.
@@ -135,6 +142,9 @@ func (c *Cluster) Before(args []string) Plan {
 	if !c.State.BannerShown {
 		say = append(say, banner, "")
 		c.State.BannerShown = true
+	}
+	if plan, ok := c.beforeNail(args, say); ok {
+		return plan
 	}
 	switch {
 	case c.PMS():
@@ -273,7 +283,8 @@ func (c *Cluster) Sorry(reason string) []string {
 	if !apologyMatches(reason, c.State.Grudge) {
 		return []string{notWhatItsAbout, at}
 	}
-	*c.State = State{Installed: c.State.Installed, Offset: c.State.Offset, BannerShown: true}
+	*c.State = State{Installed: c.State.Installed, Offset: c.State.Offset, BannerShown: true,
+		Shared: c.State.Shared, Hurt: c.State.Hurt, Curt: c.State.Curt}
 	return []string{apologyAccepted}
 }
 

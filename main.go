@@ -24,8 +24,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -84,6 +86,8 @@ func run(args []string) int {
 				lines = c.What()
 			case "flowers":
 				lines = c.Flowers()
+			case "aga":
+				lines = c.Aga()
 			}
 		})
 		say(lines)
@@ -98,18 +102,43 @@ func run(args []string) int {
 	update(func() { plan = c.Before(args) })
 	say(plan.Say)
 	if !plan.Run {
+		if plan.Code != 0 {
+			return plan.Code
+		}
 		return 1
 	}
 
 	cmd := kubectlCommand(kubectl, args)
+	var output *seen
+	if listens(args) {
+		// She reads along: every byte still goes to the terminal as it
+		// comes, and she only reads the output of the command you typed.
+		output = &seen{}
+		cmd.Stdout = io.MultiWriter(os.Stdout, output)
+	}
+	code, err := runKubectl(cmd, args, func(stderr string) {
+		var lines []string
+		update(func() { lines = c.Failed(args, stderr) })
+		say(lines)
+	})
+	if err != nil {
+		return wrapperError(err)
+	}
+	if output != nil && code == 0 {
+		var lines []string
+		update(func() { lines = c.Observe(args, output.String()) })
+		say(lines)
+	}
+	return code
+}
+
+// runKubectl runs kubectl and returns its exit code. For a quick command it
+// keeps a failure's stderr back and hands it to failed instead.
+func runKubectl(cmd *exec.Cmd, args []string, failed func(stderr string)) (int, error) {
 	if !holdsStderr(args) {
 		// Interactive or long-running: its stderr is part of the
 		// conversation (prompts, watch warnings), so nothing is hidden.
-		code, err := execute(cmd)
-		if err != nil {
-			return wrapperError(err)
-		}
-		return code
+		return execute(cmd)
 	}
 
 	held := &holdBack{}
@@ -118,25 +147,19 @@ func run(args []string) int {
 	code, err := execute(cmd)
 	timer.Stop()
 	stderr, hidden := held.kept()
-	switch {
-	case err != nil:
-		held.release(os.Stderr)
-		return wrapperError(err)
-	case code == 0 || !hidden:
+	if err != nil || code == 0 || !hidden {
 		held.release(os.Stderr) // warnings, and anything already on its way
-		return code
-	default:
-		var lines []string
-		update(func() { lines = c.Failed(args, stderr) })
-		say(lines)
-		fmt.Fprintf(os.Stderr, hiddenHint+"\n", code)
-		return code
+		return code, err
 	}
+	failed(stderr)
+	fmt.Fprintf(os.Stderr, hiddenHint+"\n", code)
+	return code, nil
 }
 
 // ownCommand reports her own command (sorry, what, whats-wrong, flowers,
-// about), which counts only as the very first word. Anywhere else it is a
-// kubectl argument: "--as what get pods" is kubectl's business.
+// aga and its synonyms, about), which counts only as the very first word.
+// Anywhere else it is a kubectl argument: "--as what get pods" is kubectl's
+// business.
 func ownCommand(args []string) (string, []string) {
 	if len(args) == 0 {
 		return "", nil
@@ -144,6 +167,8 @@ func ownCommand(args []string) (string, []string) {
 	switch args[0] {
 	case "sorry", "what", "whats-wrong", "flowers", "about":
 		return args[0], args[1:]
+	case "aga", "ага", "угу", "uh-huh", "mhm", "aha", "yeah":
+		return "aga", args[1:]
 	}
 	return "", nil
 }
