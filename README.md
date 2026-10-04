@@ -194,6 +194,37 @@ the wait, never the facts. Until the talk happens (or you say `aga`), fixes
 are refused as with the nail. When everything is healthy again, she says
 "Forget it. It's fine."
 
+## Other admins
+
+Now and then she lets you know that you are not the only one who pays her
+attention:
+
+```text
+$ misogynectl get pods
+helm was here at 05:39. He upgraded deployment/web. 😌 We rolled out together.
+NAME    READY   STATUS    RESTARTS   AGE
+web-1   1/1     Running   0          1d
+
+$ misogynectl who
+Nobody. Just a friend. 🙂
+$ misogynectl who
+Fine. Since you're SO interested. In the last 24 hours:
+  • deployment/web: kubectl-edit (Update) at 2026-10-04 06:29:12 +05, spec.replicas
+  • deployment/web: helm (Update) at 2026-10-04 05:39:12 +05, spec.template
+```
+
+Every word of it is true. It comes from the `managedFields` of the
+deployments her watcher already reads: the field manager (helm, argocd,
+flux, `kubectl edit`, ...), the operation, the time, and which fields
+changed, two levels deep (`spec.replicas`, `spec.template`), never a value.
+The cluster's own components (kubelet, kube-controller-manager and the like)
+are family, not suitors. Changes you made through `misogynectl` are left out;
+a kubectl change by someone else at the same minute cannot be told apart from
+yours and is left out too. She brings it up at most once in 30 minutes, and
+only when there was such a change in the last 24 hours. The second
+`misogynectl who` is the full list, which is also what you want when you are
+looking for drift.
+
 ## It never breaks anything
 
 It hides errors from you, which is the joke. It does not hide anything else.
@@ -214,7 +245,7 @@ It hides errors from you, which is the joke. It does not hide anything else.
   login prompts) get kubectl's stderr as it comes. Anything kubectl says
   after 3 seconds reaches you as it comes, too.
 - Her own commands (`sorry`, `what`, `flowers`, `aga` and its synonyms,
-  `leave-me-alone`, `come-back`, `about`) count only as the first word. `misogynectl --as what get pods` is kubectl's.
+  `who`, `leave-me-alone`, `come-back`, `about`) count only as the first word. `misogynectl --as what get pods` is kubectl's.
 - It acts up only for a person at a terminal, with both stdout and stderr on
   it. In pipes (`misogynectl get pods | grep web` included), scripts and CI it
   is plain `kubectl`, errors included. `--help` is kubectl's own help.
@@ -226,7 +257,9 @@ It hides errors from you, which is the joke. It does not hide anything else.
   It holds the verb, resource and name of the last failed command, never a
   flag or its value, and at most 2KB of the error with tokens blanked out.
   For the nail, it holds the namespace, kind and name of the objects she
-  shared and a reason word, never an event message or a log line.
+  shared and a reason word, never an event message or a log line. Of other
+  admins' changes it keeps the object, the field manager, the operation, the
+  time and field names, never values.
 - `misogynectl about` says what this is, who it is for, and how to make it
   stop.
 
