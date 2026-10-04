@@ -18,6 +18,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,6 +37,8 @@ web-1    1/1     Running   6 (25m ago)   40m
 db-0     1/1     Running   0             3d
 `
 )
+
+const nsTable = "NAME      STATUS   AGE\ndefault   Active   9d\n"
 
 var (
 	getPods = []string{"get", "pods", "-n", "shop"}
@@ -56,12 +59,82 @@ func TestSheSharesOnceAndRemembers(t *testing.T) {
 	if len(c.State.Shared) != 1 || c.State.Shared[0].Object != "shop/pod/web-1" || c.State.Shared[0].Heard {
 		t.Fatalf("state: %+v", c.State.Shared)
 	}
-	if again := c.Observe(getPods, crashTable); len(again) != 0 {
-		t.Errorf("shared the same nail twice: %q", again)
+	// Unheard, the same trouble is never announced as new again: she
+	// reminds you instead, however long it takes.
+	for _, later := range []time.Duration{0, shareWindow + time.Minute, 5 * time.Hour} {
+		c.Now = t0.Add(later)
+		if again := c.Observe(getPods, crashTable); len(again) != 0 {
+			t.Errorf("after %v: announced the same nail again: %q", later, again)
+		}
 	}
-	c.Now = c.Now.Add(shareWindow + time.Minute)
-	if again := c.Observe(getPods, crashTable); !contains(again, "web-1") {
-		t.Errorf("did not bring it up again after the window: %q", again)
+	// Heard, the same trouble is news again only after the window.
+	c.Now = t0
+	c.Aga()
+	if again := c.Observe(getPods, crashTable); len(again) != 0 {
+		t.Errorf("announced right after aga: %q", again)
+	}
+	c.Now = t0.Add(shareWindow + time.Minute)
+	if again := c.Observe(getPods, crashTable); !contains(again, "web-1") || !c.unheard() {
+		t.Errorf("heard trouble back after the window: %q", again)
+	}
+}
+
+// remind runs one ordinary command past her and returns what she said.
+func remind(t *testing.T, c *Cluster, args []string) []string {
+	t.Helper()
+	p := c.Before(args)
+	if !p.Run || p.Code != 0 {
+		t.Fatalf("%v did not run: %+v", args, p)
+	}
+	return p.Say
+}
+
+func TestSheEscalatesUntilHeard(t *testing.T) {
+	c := cluster(3)
+	c.Observe(getPods, crashTable)
+	commands := [][]string{{"get", "ns"}, {"top", "nodes"}, {"get", "svc", "-n", "other"},
+		getPods, {"version"}, {"describe", "node", "n1"}, {"api-resources"}, {"get", "cm"}}
+	for i, args := range commands {
+		c.Now = t0.Add(time.Duration(i) * 10 * time.Minute) // well past 15 minutes
+		said := remind(t, c, args)
+		if len(said) != 1 {
+			t.Fatalf("command %d: %q", i, said)
+		}
+		level := i + 1
+		var table []string
+		switch {
+		case level <= len(reminders):
+			table = reminders[level-1]
+		case level%2 == 0:
+			table = neverMind
+		default:
+			table = pointedReminders
+		}
+		var want []string
+		for _, l := range table {
+			want = append(want, strings.ReplaceAll(l, "{obj}", "pod/web-1 in shop"))
+		}
+		if !contains(want, said[0]) {
+			t.Errorf("level %d: %q not from its table", level, said[0])
+		}
+		if c.State.Ignored != level {
+			t.Errorf("level %d: ignored %d", level, c.State.Ignored)
+		}
+	}
+	if got := c.Aga(); !contains(heardLines, got[0]) || c.State.Ignored != 0 || c.unheard() {
+		t.Fatalf("aga: %q %+v", got, c.State)
+	}
+	if p := c.Before([]string{"get", "ns"}); len(p.Say) > 1 || (len(p.Say) == 1 && strings.Contains(p.Say[0], "web-1")) {
+		t.Errorf("reminded after aga: %q", p.Say)
+	}
+}
+
+func TestRemindersNameEveryoneWaiting(t *testing.T) {
+	c := cluster(3)
+	c.Observe(getPods, "NAME  READY  STATUS  RESTARTS  AGE\na-1   0/1    Error   0         1m\nb-1   0/1    Error   0         1m\nc-1   0/1    Error   0         1m\n")
+	said := remind(t, c, []string{"get", "ns"})
+	if !contains(said, "pod/a-1 in shop, pod/b-1 in shop and 1 more") {
+		t.Errorf("reminder: %q", said)
 	}
 }
 
@@ -88,17 +161,22 @@ func TestFixingIsRefusedThenInsistedOn(t *testing.T) {
 	if !p.Run || p.Say[len(p.Say)-1] != insisted {
 		t.Fatalf("insisting: %+v", p)
 	}
-	if c.State.Shared != nil || c.State.Hurt != nil || c.State.Curt != curtRuns {
+	if c.State.Hurt != nil || !c.State.Sulking || !c.unheard() {
 		t.Fatalf("after insisting: %+v", c.State)
 	}
-	for i := 0; i < curtRuns; i++ {
-		p := c.Before(getPods)
-		if !p.Run || len(p.Say) != 1 || !contains(curtLines, p.Say[0]) {
-			t.Fatalf("curt reply %d: %+v", i, p)
+	// She sulks, and still wants to be heard, for as long as it takes.
+	for i := 0; i < 10; i++ {
+		c.Now = c.Now.Add(time.Hour)
+		said := remind(t, c, []string{"get", "ns"})
+		if len(said) != 2 || !contains(curtLines, said[0]) {
+			t.Fatalf("command %d after insisting: %q", i, said)
 		}
 	}
-	if c.State.Curt != 0 {
-		t.Errorf("still curt: %d", c.State.Curt)
+	if got := c.Aga(); got[0] != sulkOver || c.State.Sulking || c.State.Ignored != 0 {
+		t.Fatalf("aga: %q %+v", got, c.State)
+	}
+	if p := c.Before([]string{"get", "ns"}); len(p.Say) == 1 && contains(curtLines, p.Say[0]) {
+		t.Errorf("still curt after aga: %+v", p)
 	}
 }
 
@@ -116,7 +194,7 @@ func TestReadsAndHeardProblemsAreNotRefused(t *testing.T) {
 	c := cluster(3)
 	c.Observe(getPods, crashTable)
 	for _, args := range [][]string{getPods, {"describe", "pod", "web-1"}, {"logs", "web-1"}, {"rollout", "status", "deploy/web"}} {
-		if p := c.Before(args); p.Code == nailExit {
+		if p := c.Before(args); p.Code == nailExit || !p.Run {
 			t.Errorf("%v refused: %+v", args, p)
 		}
 	}
@@ -128,16 +206,21 @@ func TestReadsAndHeardProblemsAreNotRefused(t *testing.T) {
 	}
 }
 
-func TestOldProblemsAreNotRefused(t *testing.T) {
+func TestUnheardDoesNotExpire(t *testing.T) {
 	c := cluster(3)
 	c.Observe(getPods, crashTable)
-	c.Now = c.Now.Add(shareWindow)
-	if p := c.Before(delWeb); p.Code == nailExit {
-		t.Errorf("refused after the window: %+v", p)
+	c.Now = c.Now.Add(forgetAfter - time.Minute)
+	if p := c.Before(delWeb); p.Code != nailExit {
+		t.Errorf("not refused after %v: %+v", forgetAfter-time.Minute, p)
+	}
+	// The safety valve: a day later she lets go.
+	c.Now = t0.Add(forgetAfter + time.Minute)
+	if p := c.Before(delWeb); p.Code == nailExit || c.unheard() || c.State.Ignored != 0 {
+		t.Errorf("not forgotten after a day: %+v %+v", p, c.State)
 	}
 }
 
-func TestAgaResolvesTheSulk(t *testing.T) {
+func TestAgaAnswers(t *testing.T) {
 	c := cluster(3)
 	if got := c.Aga(); got[0] != agaNothing {
 		t.Errorf("aga on nothing: %q", got)
@@ -149,17 +232,6 @@ func TestAgaResolvesTheSulk(t *testing.T) {
 	}
 	if got := c.Aga(); got[0] != stillHeard {
 		t.Errorf("aga again: %q", got)
-	}
-
-	c = cluster(3)
-	c.Observe(getPods, crashTable)
-	c.Before(delWeb)
-	c.Before(delWeb)
-	if got := c.Aga(); got[0] != sulkOver || c.State.Curt != 0 {
-		t.Errorf("aga while curt: %q %+v", got, c.State)
-	}
-	if p := c.Before(getPods); len(p.Say) == 1 && contains(curtLines, p.Say[0]) {
-		t.Errorf("still curt after aga: %+v", p)
 	}
 }
 
@@ -175,16 +247,42 @@ func TestItSortsItselfOut(t *testing.T) {
 	if len(c.State.Shared) != 0 {
 		t.Errorf("still remembered: %+v", c.State.Shared)
 	}
+}
 
-	// Never listened: thanks, no bonus. "get pods" without -n is the same pod.
+func TestHealedButUnheard(t *testing.T) {
+	c := cluster(3)
+	c.Observe(getPods, crashTable)
+	// "get pods" without -n is the same pod.
+	lines := c.Observe([]string{"get", "pods"}, healthyTable)
+	if len(lines) != 1 || lines[0] != fmt.Sprintf(sortedUnheard, "pod/web-1 in shop") {
+		t.Fatalf("healed, unheard: %q", lines)
+	}
+	if again := c.Observe(getPods, healthyTable); len(again) != 0 {
+		t.Errorf("said it twice: %q", again)
+	}
+	if !c.unheard() {
+		t.Fatal("healing made her heard")
+	}
+	if said := remind(t, c, []string{"get", "ns"}); !contains(said, "web-1") {
+		t.Errorf("no reminder after healing: %q", said)
+	}
+	if p := c.Before(delWeb); p.Code != nailExit {
+		t.Errorf("fix not refused while unheard: %+v", p)
+	}
+	got := c.Aga()
+	if len(got) != 2 || !contains(got, fmt.Sprintf(sortedItself, "pod/web-1 in shop")) {
+		t.Errorf("aga after healing: %q", got)
+	}
+	if len(c.State.Shared) != 0 || c.unheard() {
+		t.Errorf("left over: %+v", c.State)
+	}
+
+	// It broke again before she was heard: still the same complaint.
 	c = cluster(3)
 	c.Observe(getPods, crashTable)
-	lines = c.Observe([]string{"get", "pods"}, healthyTable)
-	if len(lines) != 1 || !contains(lines, "sorted itself out") {
-		t.Errorf("unheard, sorted out: %q", lines)
-	}
-	if len(c.State.Shared) != 0 {
-		t.Errorf("still remembered: %+v", c.State.Shared)
+	c.Observe(getPods, healthyTable)
+	if again := c.Observe(getPods, crashTable); len(again) != 0 || c.State.Shared[0].Healed {
+		t.Errorf("relapse: %q %+v", again, c.State.Shared)
 	}
 }
 
@@ -244,7 +342,7 @@ func TestAgaSynonyms(t *testing.T) {
 // nailKubectl logs every call and prints the table in $TABLE for get.
 const nailKubectl = `echo "$*" >> "$0.log"
 case "$1" in
-get) cat "$TABLE" ;;
+get) if [ "$2" = pods ]; then cat "$TABLE"; else printf 'NAME      STATUS   AGE\ndefault   Active   9d\n'; fi ;;
 delete) echo "pod \"$3\" deleted"; exit "${DELETE_EXIT:-0}" ;;
 esac
 `
@@ -277,16 +375,32 @@ func plain(s string) string {
 func TestNailEndToEnd(t *testing.T) {
 	s := newSandbox(t, nailKubectl)
 	crash, healthy := s.table("crash", crashTable), s.table("healthy", healthyTable)
-	// Her answers to a fix and while curt come before any whim.
-	nail := []string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=0", "DELETE_EXIT=7"}
+	// While she waits to be heard, her words come before any whim, so
+	// every command here runs (or is refused) the same way for any seed.
+	nail := []string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=0", "DELETE_EXIT=7", crash}
+	getNS := []string{"get", "ns"}
+	var typed []string
 
 	out, errOut, code := s.acting([]string{crash}, getPods...)
 	if out != crashTable || code != 0 || !strings.Contains(plain(errOut), "pod/web-1 in shop") {
 		t.Fatalf("share: stdout %q stderr %q code %d", out, errOut, code)
 	}
+	typed = append(typed, strings.Join(getPods, " "))
+
+	// Ignored, she brings it up on every command, louder each time.
+	for level := 1; level <= 4; level++ {
+		out, errOut, code := s.run(nail, getNS...)
+		if out != nsTable || code != 0 || !strings.Contains(plain(errOut), "web-1") && level < 4 {
+			t.Fatalf("level %d: stdout %q stderr %q code %d", level, out, errOut, code)
+		}
+		if errOut == "" {
+			t.Fatalf("level %d: silent", level)
+		}
+		typed = append(typed, strings.Join(getNS, " "))
+	}
 
 	calls := len(s.kubectlCalls())
-	out, errOut, code = s.run(append(nail, crash), delWeb...)
+	out, errOut, code = s.run(nail, delWeb...)
 	if code != nailExit || out != "" || !strings.Contains(plain(errOut), "nothing ran, exit 75") {
 		t.Fatalf("refusal: stdout %q stderr %q code %d", out, errOut, code)
 	}
@@ -294,14 +408,20 @@ func TestNailEndToEnd(t *testing.T) {
 		t.Fatalf("kubectl ran on a refusal: %q", s.kubectlCalls())
 	}
 
-	out, errOut, code = s.run(append(nail, crash), delWeb...)
+	out, errOut, code = s.run(nail, delWeb...)
 	if code != 7 || out != "pod \"web-1\" deleted\n" || !strings.Contains(plain(errOut), insisted) {
 		t.Fatalf("insist: stdout %q stderr %q code %d", out, errOut, code)
 	}
+	typed = append(typed, strings.Join(delWeb, " "))
 
-	out, errOut, code = s.run(append(nail, crash), getPods...)
-	if code != 0 || out != crashTable || !contains(curtLines, strings.SplitN(plain(errOut), "\n", 2)[0]) {
-		t.Fatalf("curt: stdout %q stderr %q code %d", out, errOut, code)
+	// Sulking, and still waiting: both, on every command.
+	for i := 0; i < 3; i++ {
+		out, errOut, code = s.run(nail, getPods...)
+		said := strings.Split(strings.TrimSuffix(plain(errOut), "\n"), "\n")
+		if code != 0 || out != crashTable || len(said) != 2 || !contains(curtLines, said[0]) {
+			t.Fatalf("sulking %d: stdout %q stderr %q code %d", i, out, errOut, code)
+		}
+		typed = append(typed, strings.Join(getPods, " "))
 	}
 
 	calls = len(s.kubectlCalls())
@@ -313,20 +433,14 @@ func TestNailEndToEnd(t *testing.T) {
 	}
 
 	_, errOut, _ = s.acting([]string{healthy}, getPods...)
-	if !strings.Contains(plain(errOut), "sorted itself out") {
+	if !strings.Contains(plain(errOut), "sorted itself out. Thanks for listening") {
 		t.Fatalf("resolution: %q", errOut)
 	}
+	typed = append(typed, strings.Join(getPods, " "))
 
 	// kubectl ran exactly the commands typed, in order, and nothing else.
-	want := []string{strings.Join(getPods, " "), strings.Join(delWeb, " "), strings.Join(getPods, " ")}
-	got := s.kubectlCalls()
-	if len(got) < len(want)+1 || strings.Join(got[:3], "|") != strings.Join(want, "|") {
-		t.Errorf("kubectl calls: %q", got)
-	}
-	for _, c := range got[3:] {
-		if c != strings.Join(getPods, " ") {
-			t.Errorf("unexpected kubectl call %q", c)
-		}
+	if got := s.kubectlCalls(); strings.Join(got, "|") != strings.Join(typed, "|") {
+		t.Errorf("kubectl calls:\n%q\nwant\n%q", got, typed)
 	}
 
 	var st State
@@ -334,8 +448,37 @@ func TestNailEndToEnd(t *testing.T) {
 	if err != nil || json.Unmarshal(b, &st) != nil {
 		t.Fatalf("state: %v %s", err, b)
 	}
-	if len(st.Shared) != 0 || st.Hurt != nil || st.Curt != 0 {
+	if len(st.Shared) != 0 || st.Hurt != nil || st.Sulking || st.Ignored != 0 {
 		t.Errorf("left over: %s", b)
+	}
+}
+
+// TestNailHealedAndOldEndToEnd: an hour later she is still unheard, and a
+// pod that sorted itself out does not change that.
+func TestNailHealedAndOldEndToEnd(t *testing.T) {
+	s := newSandbox(t, nailKubectl)
+	healthy := s.table("healthy", healthyTable)
+	nail := []string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=0", healthy}
+	hourAgo := time.Now().Add(-time.Hour)
+	writeState(t, s.statePath(), &State{Installed: hourAgo, BannerShown: true,
+		Shared: []Share{{Object: "shop/pod/web-1", Why: "it's Error", At: hourAgo}}, Ignored: 2})
+
+	if _, errOut, code := s.run(nail, delWeb...); code != nailExit || len(s.kubectlCalls()) != 0 {
+		t.Fatalf("an hour later the fix ran: code %d stderr %q", code, errOut)
+	}
+	_, errOut, code := s.run(nail, getPods...)
+	if code != 0 || !strings.Contains(plain(errOut), "sorted itself out. Not that you'd notice") ||
+		!strings.Contains(plain(errOut), "web-1 in shop") {
+		t.Fatalf("healed: code %d stderr %q", code, errOut)
+	}
+	if _, errOut, _ := s.run(nail, "get", "ns"); !strings.Contains(plain(errOut), "web-1") && !contains(neverMind, strings.TrimSpace(plain(errOut))) {
+		t.Fatalf("no reminder after healing: %q", errOut)
+	}
+	if _, errOut, _ := s.run(nail, "aga"); !strings.Contains(plain(errOut), "sorted itself out. Thanks for listening") {
+		t.Fatalf("aga after healing: %q", errOut)
+	}
+	if got := s.kubectlCalls(); len(got) != 2 {
+		t.Errorf("kubectl calls: %q", got)
 	}
 }
 
@@ -348,7 +491,7 @@ func TestNailNeverBlocksPipes(t *testing.T) {
 	now := time.Now()
 	writeState(t, s.statePath(), &State{Installed: now, BannerShown: true,
 		Shared: []Share{{Object: "shop/pod/web-1", Why: "it's Error", At: now}},
-		Hurt:   &Hurt{Command: "scale deploy web", At: now}, Curt: 0})
+		Hurt:   &Hurt{Command: "scale deploy web", At: now}, Sulking: true, Ignored: 5})
 	before, err := os.ReadFile(s.statePath())
 	if err != nil {
 		t.Fatal(err)

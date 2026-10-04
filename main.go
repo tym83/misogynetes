@@ -89,6 +89,9 @@ func run(args []string) int {
 			case "aga":
 				lines = c.Aga()
 			}
+			if own != "aga" {
+				lines = append(lines, c.Remind()...)
+			}
 		})
 		say(lines)
 		return 0

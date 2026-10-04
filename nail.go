@@ -32,12 +32,11 @@ import (
 const nailExit = 75
 
 const (
-	// shareWindow is how long a problem she shared waits to be heard.
+	// shareWindow is how soon after you heard it the same trouble is not
+	// worth announcing again. Unheard trouble never goes quiet.
 	shareWindow = 15 * time.Minute
 	// insistWindow is how soon the same fix must be typed again to insist.
 	insistWindow = 2 * time.Minute
-	// curtRuns is how many commands get curt replies after you insisted.
-	curtRuns = 2
 	// forgetAfter is when she lets go of a problem nobody ever saw fixed.
 	forgetAfter = 24 * time.Hour
 	// maxShared is how many problems she keeps in mind at once.
@@ -50,6 +49,7 @@ type Share struct {
 	Why    string    `json:"why"`
 	At     time.Time `json:"at"`
 	Heard  bool      `json:"heard,omitempty"`
+	Healed bool      `json:"healed,omitempty"` // sorted itself out, still unheard
 }
 
 // Hurt is the fix she refused, waiting to see if you insist.
@@ -81,10 +81,11 @@ func fixing(args []string) bool {
 	return fixVerbs[words[0]]
 }
 
-// unheard reports a problem she shared recently that you have not listened to.
+// unheard reports a problem she shared that you have not listened to. It
+// does not go away with time, only with "aga" (or after forgetAfter).
 func (c *Cluster) unheard() bool {
 	for _, s := range c.State.Shared {
-		if !s.Heard && c.recent(s.At, shareWindow) {
+		if !s.Heard {
 			return true
 		}
 	}
@@ -99,40 +100,101 @@ func (c *Cluster) recent(at time.Time, window time.Duration) bool {
 // beforeNail meets a command while she has something on her mind. It
 // returns false when the nail has nothing to do with this command.
 func (c *Cluster) beforeNail(args []string, say []string) (Plan, bool) {
+	c.forget()
 	if fixing(args) && c.unheard() {
 		cmd := grudgeOf(args)
 		if h := c.State.Hurt; h != nil && h.Command == cmd && c.recent(h.At, insistWindow) {
-			c.State.Hurt, c.State.Shared, c.State.Curt = nil, nil, curtRuns
+			c.State.Hurt, c.State.Sulking = nil, true
 			return Plan{Say: append(say, insisted), Run: true}, true
 		}
 		c.State.Hurt = &Hurt{Command: cmd, At: c.Now}
 		return Plan{Say: append(say, c.pick(hurtLines), fmt.Sprintf(hurtHint, nailExit)), Code: nailExit}, true
 	}
-	if c.State.Curt > 0 {
-		c.State.Curt--
-		return Plan{Say: append(say, c.pick(curtLines)), Run: true}, true
+	if lines := c.Remind(); len(lines) > 0 {
+		return Plan{Say: append(say, lines...), Run: true}, true
 	}
 	return Plan{}, false
+}
+
+// Remind is what she says on any command while she is sulking or still
+// waiting to be heard. Every command that ignores her takes her one level
+// further; the top level repeats.
+func (c *Cluster) Remind() []string {
+	var lines []string
+	if c.State.Sulking {
+		lines = append(lines, c.pick(curtLines))
+	}
+	waiting := c.waiting()
+	if len(waiting) == 0 {
+		return lines
+	}
+	c.State.Ignored++
+	var line string
+	switch n := c.State.Ignored; {
+	case n <= len(reminders):
+		line = c.pick(reminders[n-1])
+	case n%2 == 0:
+		line = c.pick(neverMind)
+	default:
+		line = c.pick(pointedReminders)
+	}
+	return append(lines, strings.ReplaceAll(line, "{obj}", waitingFor(waiting)))
+}
+
+// waiting is every object she is still waiting to be heard about.
+func (c *Cluster) waiting() []string {
+	var objs []string
+	for _, s := range c.State.Shared {
+		if !s.Heard {
+			objs = append(objs, display(s.Object))
+		}
+	}
+	return objs
+}
+
+// waitingFor names the first two of them, and how many more.
+func waitingFor(objs []string) string {
+	if len(objs) <= 2 {
+		return strings.Join(objs, " and ")
+	}
+	return strings.Join(objs[:2], ", ") + fmt.Sprintf(andOthers, len(objs)-2)
 }
 
 // Aga is you, listening: "uh-huh". Nothing runs.
 func (c *Cluster) Aga() []string {
 	c.forget()
-	sulking := c.State.Curt > 0 || c.State.Hurt != nil
-	c.State.Curt, c.State.Hurt = 0, nil
+	sulking := c.State.Sulking || c.State.Hurt != nil
 	unheard := c.unheard()
-	for i := range c.State.Shared {
-		c.State.Shared[i].Heard = true
+	c.State.Sulking, c.State.Hurt, c.State.Ignored = false, nil, 0
+	var healed []string
+	kept := c.State.Shared[:0]
+	for _, s := range c.State.Shared {
+		if s.Healed {
+			healed = append(healed, display(s.Object))
+			continue
+		}
+		s.Heard = true
+		kept = append(kept, s)
 	}
+	c.State.Shared = kept
+	if len(kept) == 0 {
+		c.State.Shared = nil
+	}
+	var lines []string
 	switch {
 	case sulking:
-		return []string{sulkOver}
+		lines = append(lines, sulkOver)
 	case unheard:
-		return []string{c.pick(heardLines)}
+		lines = append(lines, c.pick(heardLines))
 	case len(c.State.Shared) > 0:
-		return []string{stillHeard}
+		lines = append(lines, stillHeard)
+	default:
+		return []string{agaNothing}
 	}
-	return []string{agaNothing}
+	if len(healed) > 0 {
+		lines = append(lines, fmt.Sprintf(sortedItself, waitingFor(healed)))
+	}
+	return lines
 }
 
 // Observe takes in what she saw in the output of your read command: new
@@ -143,24 +205,34 @@ func (c *Cluster) Observe(args []string, out string) []string {
 	var lines []string
 	for _, s := range Notice(args, out, c.Now) {
 		i := c.find(s.Object)
+		var known *Share
+		if i >= 0 {
+			known = &c.State.Shared[i]
+		}
 		switch {
-		case s.Trouble && i >= 0 && c.recent(c.State.Shared[i].At, shareWindow):
-			// Still the same nail. She already told you.
+		case s.Trouble && known != nil && !known.Heard:
+			// Still the same nail, and she is still telling you about it.
+			known.Healed = false
+		case s.Trouble && known != nil && c.recent(known.At, shareWindow):
+			// You heard it a moment ago.
 		case s.Trouble:
 			sh := Share{Object: s.Object, Why: s.Why, At: c.Now}
-			if i >= 0 {
-				c.State.Shared[i] = sh
+			if known != nil {
+				*known = sh
 			} else {
 				c.State.Shared = append(c.State.Shared, sh)
 			}
 			shared = append(shared, sh)
-		case s.Healthy && i >= 0:
-			sh := c.State.Shared[i]
-			c.State.Shared = append(c.State.Shared[:i], c.State.Shared[i+1:]...)
-			lines = append(lines, fmt.Sprintf(sortedItself, display(sh.Object)))
-			if sh.Heard {
-				lines = append(lines, c.pick(onlyListened))
+		case s.Healthy && known != nil && !known.Heard:
+			// It sorted itself out, but she still wants to be heard.
+			if !known.Healed {
+				known.Healed = true
+				lines = append(lines, fmt.Sprintf(sortedUnheard, display(known.Object)))
 			}
+		case s.Healthy && known != nil:
+			obj := known.Object
+			c.State.Shared = append(c.State.Shared[:i], c.State.Shared[i+1:]...)
+			lines = append(lines, fmt.Sprintf(sortedItself, display(obj)), c.pick(onlyListened))
 		}
 	}
 	if over := len(c.State.Shared) - maxShared; over > 0 {
@@ -204,5 +276,8 @@ func (c *Cluster) forget() {
 	}
 	if h := c.State.Hurt; h != nil && !c.recent(h.At, insistWindow) {
 		c.State.Hurt = nil
+	}
+	if !c.unheard() {
+		c.State.Ignored = 0
 	}
 }

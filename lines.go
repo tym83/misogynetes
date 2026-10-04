@@ -118,7 +118,7 @@ var shareLines = []string{
 const andMore = " (And %d more. Don't ask.)"
 
 // shareHint follows a share, plainly. %d is the exit code of a refusal.
-const shareHint = "(she just wants to be heard: `misogynectl aga`. Fix it before that and nothing runs, exit %d.)"
+const shareHint = "(she just wants to be heard: `misogynectl aga`. Until then she keeps bringing it up, and a fix does not run: exit %d.)"
 
 // hurtLines refuse a fix while she wants to be heard.
 var hurtLines = []string{
@@ -135,8 +135,50 @@ const hurtHint = "(nothing ran, exit %d — `misogynectl aga` to listen, or type
 // insisted is said when you type the fix again, and then it runs.
 const insisted = "Fine. Everything's fine. Do what you want. 🙂"
 
-// curtLines are all you get for a while after you insisted.
+// curtLines are all you get after you insisted, until you say "aga".
 var curtLines = []string{"K.", "Fine.", "Mhm.", "👍", "Sure."}
+
+// reminders bring it up again on every command while she is unheard, one
+// table per level: the first command that ignores her, the second, the
+// third. {obj} names what she is still waiting to be heard about.
+var reminders = [][]string{
+	{
+		"…so, about {obj}. 🥺",
+		"Anyway. {obj}. Just so you know. 🫤",
+		"I was telling you about {obj}…",
+	},
+	{
+		"Are you even listening? {obj}. 😕",
+		"Did you hear what I said about {obj}? 🙁",
+		"You're not even listening, are you. ({obj}) 😒",
+	},
+	{
+		"I'm talking to you. {obj}. 😠",
+		"Hello?? {obj}?? 👋😤",
+		"Hello??? I'm still talking about {obj}. 😤",
+	},
+}
+
+// After that she alternates between giving up and pointing again.
+var (
+	neverMind = []string{
+		"Never mind. It's fine. 🙂",
+		"Forget it. It's fine. 🙂",
+		"No, it's fine. Really. 🙂",
+	}
+	pointedReminders = []string{
+		"Still {obj}, by the way. Not that you care. 🙃",
+		"{obj}. I'm just saying. 🙃",
+		"It's fine. It's just {obj}. Again. 🙃",
+	}
+)
+
+// andOthers names how many more objects she is waiting about.
+const andOthers = " and %d more"
+
+// sortedUnheard is said when the trouble went away before you listened.
+// She still wants to be heard. %s is the object.
+const sortedUnheard = "%s sorted itself out. Not that you'd notice. 🙃"
 
 // heardLines answer "aga" when she had something on her mind.
 var heardLines = []string{

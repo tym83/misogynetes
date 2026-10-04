@@ -45,9 +45,10 @@ type State struct {
 	BannerShown bool       `json:"bannerShown"`
 
 	// It's not about the nail.
-	Shared []Share `json:"shared,omitempty"` // problems she told you about
-	Hurt   *Hurt   `json:"hurt,omitempty"`   // the fix she refused
-	Curt   int     `json:"curt,omitempty"`   // curt replies still to come
+	Shared  []Share `json:"shared,omitempty"`  // problems she told you about
+	Hurt    *Hurt   `json:"hurt,omitempty"`    // the fix she refused
+	Sulking bool    `json:"sulking,omitempty"` // since you insisted, until "aga"
+	Ignored int     `json:"ignored,omitempty"` // commands in a row that ignored her
 }
 
 // Cluster decides how she reacts.
@@ -284,7 +285,8 @@ func (c *Cluster) Sorry(reason string) []string {
 		return []string{notWhatItsAbout, at}
 	}
 	*c.State = State{Installed: c.State.Installed, Offset: c.State.Offset, BannerShown: true,
-		Shared: c.State.Shared, Hurt: c.State.Hurt, Curt: c.State.Curt}
+		Shared: c.State.Shared, Hurt: c.State.Hurt,
+		Sulking: c.State.Sulking, Ignored: c.State.Ignored}
 	return []string{apologyAccepted}
 }
 

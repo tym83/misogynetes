@@ -80,7 +80,16 @@ $ misogynectl get pods -n shop
 NAME     READY   STATUS             RESTARTS      AGE
 web-1    0/1     CrashLoopBackOff   6 (40s ago)   9m
 I just wanted to share: pod/web-1 in shop, it's CrashLoopBackOff. 🥺
-(she just wants to be heard: `misogynectl aga`. Fix it before that and nothing runs, exit 75.)
+(she just wants to be heard: `misogynectl aga`. Until then she keeps bringing it up, and a fix does not run: exit 75.)
+
+$ misogynectl get ns
+…so, about pod/web-1 in shop. 🥺
+NAME      STATUS   AGE
+default   Active   9d
+
+$ misogynectl top nodes
+Are you even listening? pod/web-1 in shop. 😕
+...
 
 $ misogynectl delete pod web-1 -n shop
 You're not listening to me. I just wanted to share with you. 😢
@@ -102,19 +111,27 @@ You didn't even try to fix it. That's all I ever wanted. 💕
   errors in the logs), she says so after kubectl's output and remembers the
   object. She reads only table and description output: `-o yaml`, `-o json`
   and the like are left alone.
+- **She keeps bringing it up.** Until you say `aga`, every command you type,
+  whatever it is about, starts with a reminder that names what she is still
+  waiting to be heard about, and every command that ignores her makes it
+  louder: "…so, about pod/web-1", then "Are you even listening?", then
+  "Hello??", then for ever after "Never mind. It's fine." taking turns with
+  pointed reminders. Being unheard does not wear off with time; only after a
+  day does she let it go.
 - **You listen.** `misogynectl aga` (also `ага`, `угу`, `uh-huh`, `mhm`, `aha`,
-  `yeah`) runs no kubectl and tells her you heard. After that you may fix
-  whatever you like.
+  `yeah`) runs no kubectl, tells her you heard and starts her over from
+  calm. After that you may fix whatever you like.
 - **You fix.** A command that changes something (`delete`, `apply`, `edit`,
   `patch`, `scale`, `rollout restart`, `set`, `drain`, `cordon`, `label`,
-  `exec`, ...) within 15 minutes of an unheard share is refused: nothing runs
-  and the exit code is **75**. Type the same command again within 2 minutes to
-  insist: it runs with kubectl's own exit code, she says "Fine. Everything's
-  fine. Do what you want." and answers the next two commands curtly.
-  `misogynectl aga` ends that too.
+  `exec`, ...) while she is unheard is refused: nothing runs and the exit
+  code is **75**. Type the same command again within 2 minutes to insist: it
+  runs with kubectl's own exit code, she says "Fine. Everything's fine. Do
+  what you want." and from then on answers every command curtly, on top of
+  the reminders, until `misogynectl aga`.
 - **It sorts itself out.** When a later read shows the object healthy, she
   says so and thanks you for listening, with something extra if all you did
-  was listen.
+  was listen. If you never listened, it is "sorted itself out. Not that you'd
+  notice.", and she still wants to be heard about it until `aga`.
 
 She never asks the cluster anything herself: she only reads the output of the
 commands you typed, while it reaches your terminal unchanged.
