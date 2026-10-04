@@ -69,7 +69,7 @@ func run(args []string) int {
 	}
 
 	if own, rest := ownCommand(args); own == "about" {
-		fmt.Println(about)
+		fmt.Println(asInvoked(about, invokedAs))
 		return 0
 	} else if own != "" {
 		var lines []string
@@ -129,7 +129,7 @@ func run(args []string) int {
 		var lines []string
 		update(func() { lines = c.Failed(args, stderr) })
 		say(lines)
-		fmt.Fprintf(os.Stderr, hiddenHint+"\n", code)
+		fmt.Fprintf(os.Stderr, asInvoked(hiddenHint, invokedAs)+"\n", code)
 		return code
 	}
 }
@@ -150,7 +150,7 @@ func ownCommand(args []string) (string, []string) {
 
 func say(lines []string) {
 	for _, l := range lines {
-		fmt.Fprintf(os.Stderr, "\033[35m%s\033[0m\n", l)
+		fmt.Fprintf(os.Stderr, "\033[35m%s\033[0m\n", asInvoked(l, invokedAs))
 	}
 }
 
