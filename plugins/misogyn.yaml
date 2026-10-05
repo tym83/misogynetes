@@ -1,0 +1,76 @@
+# krew plugin manifest for `kubectl misogyn`.
+#
+# The sha256 values below are placeholders: the release workflow
+# (.github/workflows/release.yml) builds the archives on a v* tag, fills in
+# their checksums with hack/krew-release.sh and attaches the result to the
+# GitHub release as misogyn.yaml. Install from there:
+#   kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn.yaml
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: misogyn
+spec:
+  version: v0.1.0
+  homepage: https://github.com/tym83/misogynetes
+  shortDescription: kubectl as misogynists imagine women (satire)
+  description: |
+    A punishment for misogynists: kubectl that behaves exactly the way
+    misogynists think women behave. It sulks, hides errors behind
+    "Everything's fine." and wants an apology for the right thing. What the
+    evidence actually says about women, with sources:
+    https://github.com/tym83/kyvernetria
+    It runs exactly the command you typed, or nothing, and exit codes are
+    honest. In pipes, scripts and CI it is plain kubectl.
+  caveats: |
+    Requires kubectl on PATH. Make it stop with MISOGYNETES=off;
+    `kubectl misogyn about` says what this is and who it is for.
+    Install it on your own machine. Don't install it on anyone else's.
+  platforms:
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: amd64
+      uri: https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn-v0.1.0-darwin-amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-misogyn
+      files:
+        - from: kubectl-misogyn
+          to: .
+        - from: LICENSE
+          to: .
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: arm64
+      uri: https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn-v0.1.0-darwin-arm64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-misogyn
+      files:
+        - from: kubectl-misogyn
+          to: .
+        - from: LICENSE
+          to: .
+    - selector:
+        matchLabels:
+          os: linux
+          arch: amd64
+      uri: https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn-v0.1.0-linux-amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-misogyn
+      files:
+        - from: kubectl-misogyn
+          to: .
+        - from: LICENSE
+          to: .
+    - selector:
+        matchLabels:
+          os: linux
+          arch: arm64
+      uri: https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn-v0.1.0-linux-arm64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-misogyn
+      files:
+        - from: kubectl-misogyn
+          to: .
+        - from: LICENSE
+          to: .

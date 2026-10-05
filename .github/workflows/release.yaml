@@ -1,0 +1,33 @@
+name: release
+
+# On a v* tag: build the krew archives for darwin and linux (amd64, arm64),
+# fill their sha256 into the krew manifest and publish both as a GitHub
+# release, so the plugin installs with
+#   kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/download/<tag>/misogyn.yaml
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+      - run: hack/krew-release.sh "${GITHUB_REF_NAME}" dist
+      - name: Create release
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Misogynetes ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/*.tar.gz dist/misogyn.yaml
