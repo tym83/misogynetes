@@ -24,8 +24,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -37,7 +39,13 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && args[0] == watchCommand {
+		return watchMain(args[1:])
+	}
 	if !actsUp() {
+		if os.Getenv("MISOGYNETES") == "off" {
+			stopWatchers(filepath.Dir(statePathFor())) // silently: off is off
+		}
 		kubectl, err := resolveKubectl()
 		if err != nil {
 			return wrapperError(err)
@@ -50,10 +58,7 @@ func run(args []string) int {
 		seed = s
 	}
 	r := rand.New(rand.NewSource(seed))
-	statePath := ""
-	if dir, err := os.UserCacheDir(); err == nil {
-		statePath = filepath.Join(dir, "misogynetes", "state.json")
-	}
+	statePath := statePathFor()
 	now := time.Now()
 	c := &Cluster{Rand: r, Now: now, Day: -1}
 	if d, err := strconv.Atoi(os.Getenv("MISOGYNETES_DAY")); err == nil {
@@ -80,12 +85,26 @@ func run(args []string) int {
 					rest = rest[1:]
 				}
 				lines = c.Sorry(strings.Join(rest, " "))
-			case "what", "whats-wrong":
+			case "what", "whats-wrong", "what's":
 				lines = c.What()
 			case "flowers":
 				lines = c.Flowers()
+			case "aga":
+				lines = c.Aga()
+			case "leave-me-alone":
+				lines = c.LeaveMeAlone()
+			case "come-back":
+				lines = c.ComeBack()
+			case "who":
+				lines = c.Who()
+			}
+			if own == "sorry" || own == "flowers" {
+				lines = append(lines, c.Remind()...)
 			}
 		})
+		if own == "leave-me-alone" {
+			stopWatchers(filepath.Dir(statePath))
+		}
 		say(lines)
 		return 0
 	}
@@ -95,21 +114,55 @@ func run(args []string) int {
 		return wrapperError(err)
 	}
 	var plan Plan
-	update(func() { plan = c.Before(args) })
+	leftAlone := false
+	update(func() {
+		plan, leftAlone = c.Before(args), c.State.LeftAlone
+		if plan.Run {
+			c.noteMine(args)
+		}
+	})
 	say(plan.Say)
+	if !leftAlone && terminal(os.Stdout) && terminal(os.Stderr) {
+		ensureWatcher(args, filepath.Dir(statePath))
+	}
 	if !plan.Run {
+		if plan.Code != 0 {
+			return plan.Code
+		}
 		return 1
 	}
 
 	cmd := kubectlCommand(kubectl, args)
+	var output *seen
+	if listens(args) {
+		// She reads along: every byte still goes to the terminal as it
+		// comes, and she only reads the output of the command you typed.
+		output = &seen{}
+		cmd.Stdout = io.MultiWriter(os.Stdout, output)
+	}
+	code, err := runKubectl(cmd, args, func(stderr string) {
+		var lines []string
+		update(func() { lines = c.Failed(args, stderr) })
+		say(lines)
+	})
+	if err != nil {
+		return wrapperError(err)
+	}
+	if output != nil && code == 0 {
+		var lines []string
+		update(func() { lines = c.Observe(args, output.String()) })
+		say(lines)
+	}
+	return code
+}
+
+// runKubectl runs kubectl and returns its exit code. For a quick command it
+// keeps a failure's stderr back and hands it to failed instead.
+func runKubectl(cmd *exec.Cmd, args []string, failed func(stderr string)) (int, error) {
 	if !holdsStderr(args) {
 		// Interactive or long-running: its stderr is part of the
 		// conversation (prompts, watch warnings), so nothing is hidden.
-		code, err := execute(cmd)
-		if err != nil {
-			return wrapperError(err)
-		}
-		return code
+		return execute(cmd)
 	}
 
 	held := &holdBack{}
@@ -118,34 +171,38 @@ func run(args []string) int {
 	code, err := execute(cmd)
 	timer.Stop()
 	stderr, hidden := held.kept()
-	switch {
-	case err != nil:
-		held.release(os.Stderr)
-		return wrapperError(err)
-	case code == 0 || !hidden:
+	if err != nil || code == 0 || !hidden {
 		held.release(os.Stderr) // warnings, and anything already on its way
-		return code
-	default:
-		var lines []string
-		update(func() { lines = c.Failed(args, stderr) })
-		say(lines)
-		fmt.Fprintf(os.Stderr, asInvoked(hiddenHint, invokedAs)+"\n", code)
-		return code
+		return code, err
 	}
+	failed(stderr)
+	fmt.Fprintf(os.Stderr, asInvoked(hiddenHint, invokedAs)+"\n", code)
+	return code, nil
 }
 
 // ownCommand reports her own command (sorry, what, whats-wrong, flowers,
-// about), which counts only as the very first word. Anywhere else it is a
-// kubectl argument: "--as what get pods" is kubectl's business.
+// aga and its synonyms, about), which counts only as the very first word.
+// Anywhere else it is a kubectl argument: "--as what get pods" is kubectl's
+// business.
 func ownCommand(args []string) (string, []string) {
 	if len(args) == 0 {
 		return "", nil
 	}
 	switch args[0] {
-	case "sorry", "what", "whats-wrong", "flowers", "about":
+	case "sorry", "what", "whats-wrong", "what's", "flowers", "about", "leave-me-alone", "come-back", "who":
 		return args[0], args[1:]
+	case "aga", "ага", "угу", "uh-huh", "mhm", "aha", "yeah":
+		return "aga", args[1:]
 	}
 	return "", nil
+}
+
+// statePathFor is where her memory lives, or "" when there is nowhere.
+func statePathFor() string {
+	if dir, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(dir, "misogynetes", "state.json")
+	}
+	return ""
 }
 
 func say(lines []string) {
@@ -155,7 +212,9 @@ func say(lines []string) {
 }
 
 // actsUp: MISOGYNETES=off makes her plain kubectl, MISOGYNETES=always makes
-// her act up even into a pipe; otherwise only a person at a terminal gets it.
+// her act up even into a pipe; otherwise only a person at a terminal gets it,
+// with both stdout and stderr on it: "misogynectl get pods | grep x" is a
+// script, and a script gets plain kubectl.
 func actsUp() bool {
 	switch os.Getenv("MISOGYNETES") {
 	case "off":
@@ -163,7 +222,11 @@ func actsUp() bool {
 	case "always":
 		return true
 	}
-	info, err := os.Stderr.Stat()
+	return terminal(os.Stdout) && terminal(os.Stderr)
+}
+
+func terminal(f *os.File) bool {
+	info, err := f.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 

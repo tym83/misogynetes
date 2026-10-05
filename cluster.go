@@ -43,6 +43,23 @@ type State struct {
 	LastError   string     `json:"lastError,omitempty"`
 	Asked       int        `json:"asked"`
 	BannerShown bool       `json:"bannerShown"`
+
+	// It's not about the nail.
+	Shared  []Share `json:"shared,omitempty"`  // problems she told you about
+	Hurt    *Hurt   `json:"hurt,omitempty"`    // the fix she refused
+	Sulking bool    `json:"sulking,omitempty"` // since you insisted, until "aga"
+	Ignored int     `json:"ignored,omitempty"` // commands in a row that ignored her
+
+	// She comes running.
+	NaggedAt  *time.Time `json:"naggedAt,omitempty"`  // when she last brought it up
+	Talk      *Talk      `json:"talk,omitempty"`      // "we need to talk"
+	LeftAlone bool       `json:"leftAlone,omitempty"` // "leave me alone": no watcher
+
+	// Other admins.
+	Suitors   []FieldEntry `json:"suitors,omitempty"`   // recent changes by others
+	Mine      []Mine       `json:"mine,omitempty"`      // your own changes
+	JealousAt *time.Time   `json:"jealousAt,omitempty"` // her last jealous remark
+	WhoAsked  int          `json:"whoAsked,omitempty"`
 }
 
 // Cluster decides how she reacts.
@@ -123,9 +140,11 @@ func Verb(args []string) string {
 }
 
 // Plan is what she says before a command, and whether she runs it at all.
+// Code is the exit code when she does not; zero means 1.
 type Plan struct {
-	Say []string
-	Run bool
+	Say  []string
+	Run  bool
+	Code int
 }
 
 // Before decides how to meet a command.
@@ -135,6 +154,12 @@ func (c *Cluster) Before(args []string) Plan {
 	if !c.State.BannerShown {
 		say = append(say, banner, "")
 		c.State.BannerShown = true
+	}
+	if plan, ok := c.beforeNail(args, say); ok {
+		return plan
+	}
+	if line := c.jealous(args); line != "" {
+		say = append(say, line)
 	}
 	switch {
 	case c.PMS():
@@ -243,6 +268,9 @@ func truncate(s string, n int) string {
 
 // What answers "what's wrong?": nothing, then you-know-what, then the truth.
 func (c *Cluster) What() []string {
+	if c.State.Talk != nil {
+		return c.talkWhat()
+	}
 	if c.State.Grudge == "" {
 		return []string{whatAnswers[0]}
 	}
@@ -273,7 +301,11 @@ func (c *Cluster) Sorry(reason string) []string {
 	if !apologyMatches(reason, c.State.Grudge) {
 		return []string{notWhatItsAbout, at}
 	}
-	*c.State = State{Installed: c.State.Installed, Offset: c.State.Offset, BannerShown: true}
+	*c.State = State{Installed: c.State.Installed, Offset: c.State.Offset, BannerShown: true,
+		Shared: c.State.Shared, Hurt: c.State.Hurt,
+		Sulking: c.State.Sulking, Ignored: c.State.Ignored,
+		NaggedAt: c.State.NaggedAt, Talk: c.State.Talk, LeftAlone: c.State.LeftAlone,
+		Suitors: c.State.Suitors, Mine: c.State.Mine, JealousAt: c.State.JealousAt, WhoAsked: c.State.WhoAsked}
 	return []string{apologyAccepted}
 }
 
@@ -307,7 +339,12 @@ func (c *Cluster) grudgeTime() string {
 	if c.State.GrudgeAt == nil {
 		return "some point"
 	}
-	at, now := c.State.GrudgeAt.Local(), c.Now.Local()
+	return c.when(*c.State.GrudgeAt)
+}
+
+// when is a time in local time, with the date if it was not today.
+func (c *Cluster) when(t time.Time) string {
+	at, now := t.Local(), c.Now.Local()
 	if y, m, d := at.Date(); y == now.Year() && m == now.Month() && d == now.Day() {
 		return at.Format("15:04")
 	}

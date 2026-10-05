@@ -28,9 +28,10 @@ To apologize: ` + "`misogynectl sorry for <what you did>`" + `. To make it stop:
 const about = banner + `
 
 It runs exactly the kubectl command you typed, or nothing. Never anything else.
-Exit codes are kubectl's own when it ran, 1 when she refused.
+On her own she only reads: get pods, nodes, Warning events, PVCs and deployments, pinned to one --context.
+Exit codes are kubectl's own when it ran, 1 when she refused, 75 when she only wanted to share.
 In pipes, scripts and CI it is plain kubectl. ` + "`--help`" + ` is kubectl's own help.
-Her own commands, as the first word: sorry, what, flowers, about.
+Her own commands, as the first word: sorry, what, flowers, aga (uh-huh), who, leave-me-alone, come-back, about.
 Source: https://github.com/tym83/misogynetes`
 
 // quotes are the quotes he imagines she keeps reposting.
@@ -100,4 +101,171 @@ const (
 	apologyAccepted    = "Fine. 🙄 (Mood restored.)"
 	flowersNice        = "🌹 ...they're nice. Doesn't change anything."
 	nothingToApologize = "You're apologizing when nothing happened? Now I'm wondering what you did. 🤨"
+)
+
+// It's Not About the Nail (Jason Headley, 2013).
+
+// shareLines tell you about trouble she saw. {obj} is the object, {why}
+// what is wrong with it.
+var shareLines = []string{
+	"I just wanted to share: {obj}, {why}. 🥺",
+	"So, {obj}… {why}. And it's like there's this pressure, right here. 😣",
+	"It's not about the {obj}. It's just… {why}. 🔨",
+	"You know {obj}? {why}. I don't need you to fix it. I just need you to listen. 🫶",
+	"Can I just tell you something? {obj}: {why}. And it never stops. 😔",
+}
+
+// andMore follows a share when there was more than one thing.
+const andMore = " (And %d more. Don't ask.)"
+
+// shareHint follows a share, plainly. %d is the exit code of a refusal.
+const shareHint = "(she just wants to be heard: `misogynectl aga`. Until then she keeps bringing it up, and a fix does not run: exit %d.)"
+
+// hurtLines refuse a fix while she wants to be heard.
+var hurtLines = []string{
+	"You're not listening to me. I just wanted to share with you. 😢",
+	"You ALWAYS do this. You always try to fix it. 😤",
+	"I don't need you to fix it. I need you to listen. 😔",
+	"Stop trying to fix it! 🔨😭",
+	"See, this is what you always do. 🙄",
+}
+
+// hurtHint follows a refused fix, plainly. %d is the exit code.
+const hurtHint = "(nothing ran, exit %d — `misogynectl aga` to listen, or type it again to insist)"
+
+// insisted is said when you type the fix again, and then it runs.
+const insisted = "Fine. Everything's fine. Do what you want. 🙂"
+
+// curtLines are all you get after you insisted, until you say "aga".
+var curtLines = []string{"K.", "Fine.", "Mhm.", "👍", "Sure."}
+
+// reminders bring it up again on every command while she is unheard, one
+// table per level: the first command that ignores her, the second, the
+// third. {obj} names what she is still waiting to be heard about.
+var reminders = [][]string{
+	{
+		"…so, about {obj}. 🥺",
+		"Anyway. {obj}. Just so you know. 🫤",
+		"I was telling you about {obj}…",
+	},
+	{
+		"Are you even listening? {obj}. 😕",
+		"Did you hear what I said about {obj}? 🙁",
+		"You're not even listening, are you. ({obj}) 😒",
+	},
+	{
+		"I'm talking to you. {obj}. 😠",
+		"Hello?? {obj}?? 👋😤",
+		"Hello??? I'm still talking about {obj}. 😤",
+	},
+}
+
+// After that she alternates between giving up and pointing again.
+var (
+	neverMind = []string{
+		"Never mind. It's fine. 🙂",
+		"Forget it. It's fine. 🙂",
+		"No, it's fine. Really. 🙂",
+	}
+	pointedReminders = []string{
+		"Still {obj}, by the way. Not that you care. 🙃",
+		"{obj}. I'm just saying. 🙃",
+		"It's fine. It's just {obj}. Again. 🙃",
+	}
+)
+
+// andOthers names how many more objects she is waiting about.
+const andOthers = " and %d more"
+
+// sortedUnheard is said when the trouble went away before you listened.
+// She still wants to be heard. %s is the object.
+const sortedUnheard = "%s sorted itself out. Not that you'd notice. 🙃"
+
+// heardLines answer "aga" when she had something on her mind.
+var heardLines = []string{
+	"Thank you. That's all I wanted. 🫶",
+	"See? It's nice when you just listen. 🥰",
+	"You're such a good listener. 💕",
+}
+
+// Other answers to "aga".
+const (
+	sulkOver   = "…okay. Thank you for listening. 🫶 (Sulk over.)"
+	stillHeard = "I know. Thank you. 🥰"
+	agaNothing = "Uh-huh what? I didn't say anything. 🙂"
+)
+
+// sortedItself is said when the trouble went away. %s is the object.
+const sortedItself = "Oh, %s sorted itself out. Thanks for listening. 🥰"
+
+// onlyListened is the bonus for having only listened.
+var onlyListened = []string{
+	"You didn't even try to fix it. That's all I ever wanted. 💕",
+	"See? Sometimes things just need to be heard. 🌸",
+}
+
+// We need to talk.
+
+// talkLines are all she says about something serious.
+var talkLines = []string{
+	"We need to talk.",
+	"Can we talk later?",
+	"It's not about the pods.",
+}
+
+// talkWhatAnswers come before the truth.
+var talkWhatAnswers = []string{"Nothing. 🙂", "I'm fine. 🙂"}
+
+// talkSummaryHead opens the truth. %s is the context, then when it began.
+const talkSummaryHead = "Fine. Since you're SO interested. Context %s, since %s:"
+
+// talkAllFine closes the truth when it is already over.
+const talkAllFine = "It's all fine now, though. Forget it. 🙂"
+
+// forgetIt is said when everything serious went away.
+const forgetIt = "Forget it. It's fine. 🙂"
+
+// Leave me alone.
+var leaveLines = []string{
+	"Fine. I'll leave you alone. Like you wanted. 🙂",
+	"Oh. Okay. I didn't know I was bothering you. 🥲",
+	"Wow. Okay. Noted. 🙂",
+}
+
+// leftAloneHint says plainly what happened.
+const leftAloneHint = "(her watcher is stopped and will not start again — `misogynectl come-back` if you miss her)"
+
+const (
+	cameBack  = "I knew you'd miss me. 🥰 (She'll start watching from your next command.)"
+	neverLeft = "I never left. 🙂"
+)
+
+// Other admins. {who} is the field manager, {obj} the object, {when} the
+// time, {ago} how long ago, {fields} what changed, {how} the kubectl command.
+
+var helmLines = []string{
+	"{who} was here at {when}. He upgraded {obj}. 😌 We rolled out together.",
+	"{who} came by {ago}. He touched {fields} on {obj}. He always knows what to change. 😌",
+}
+
+var gitopsLines = []string{
+	"{who} synced {obj} again at {when}. He never forgets. 💅",
+	"{who} checked on {obj} {ago}. Every few minutes, actually. Some people care. 💅",
+}
+
+var kubectlLines = []string{
+	"Someone ran `{how}` on {obj} {ago}. He changed {fields}. I didn't say no. 😏",
+	"Somebody else did `{how}` on {obj} at {when}. {fields}. You never do that for me. 🙄",
+}
+
+var suitorLines = []string{
+	"{who} was with {obj} at {when}. He changed {fields}. Just a friend. 😌",
+	"{who} spent some time on {obj} {ago}. We have a connection. ✨",
+}
+
+// Answers to "who".
+const (
+	nobody      = "Nobody. 🙂"
+	justAFriend = "Nobody. Just a friend. 🙂"
+	whoTruth    = "Fine. Since you're SO interested. In the last 24 hours:"
 )
