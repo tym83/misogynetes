@@ -74,7 +74,7 @@ func run(args []string) int {
 	}
 
 	if own, rest := ownCommand(args); own == "about" {
-		fmt.Println(about)
+		fmt.Println(asInvoked(about, invokedAs))
 		return 0
 	} else if own != "" {
 		var lines []string
@@ -176,7 +176,7 @@ func runKubectl(cmd *exec.Cmd, args []string, failed func(stderr string)) (int, 
 		return code, err
 	}
 	failed(stderr)
-	fmt.Fprintf(os.Stderr, hiddenHint+"\n", code)
+	fmt.Fprintf(os.Stderr, asInvoked(hiddenHint, invokedAs)+"\n", code)
 	return code, nil
 }
 
@@ -207,7 +207,7 @@ func statePathFor() string {
 
 func say(lines []string) {
 	for _, l := range lines {
-		fmt.Fprintf(os.Stderr, "\033[35m%s\033[0m\n", l)
+		fmt.Fprintf(os.Stderr, "\033[35m%s\033[0m\n", asInvoked(l, invokedAs))
 	}
 }
 

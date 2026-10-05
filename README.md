@@ -266,6 +266,21 @@ It hides errors from you, which is the joke. It does not hide anything else.
 
 ## Install
 
+As a kubectl plugin, with [krew](https://krew.sigs.k8s.io/):
+
+```bash
+kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn.yaml
+kubectl misogyn about
+```
+
+Every release carries its own `misogyn.yaml` with the checksums filled in;
+`plugins/misogyn.yaml` in the repository is the template it is made from.
+As a plugin she names herself `kubectl misogyn` in her hints
+(`kubectl misogyn sorry for the delete`). The plugin runs the real `kubectl`
+from your PATH and behaves exactly like `misogynectl`.
+
+Or as a standalone binary:
+
 ```bash
 go install github.com/tym83/misogynetes@latest
 ```
