@@ -183,7 +183,7 @@ func TestWatcherStopsOnOffTTYAndLifetime(t *testing.T) {
 
 func TestScriptsNeverStartAWatcher(t *testing.T) {
 	s := newSandbox(t, watchKubectl)
-	for _, env := range [][]string{{"MISOGYNETES="}, {"MISOGYNETES=always"}, {"MISOGYNETES=off"}} {
+	for _, env := range [][]string{{"MISOGYNETES="}, {"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=0"}, {"MISOGYNETES=off"}} {
 		s.run(env, "get", "pods")
 	}
 	time.Sleep(300 * time.Millisecond)
