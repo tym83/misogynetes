@@ -129,7 +129,10 @@ You didn't even try to fix it. That's all I ever wanted. 💕
   what you want." and from then on answers every command curtly, on top of
   the reminders, until `misogynectl aga`. If the fix deleted the object
   she was talking about (or kubectl later says it is not found), she stops
-  naming it; the curt answers stay until `aga`.
+  naming it; the curt answers stay until `aga`. She goes by what kubectl
+  says it deleted, so a delete by `-l` selector or `-f` file counts too,
+  and a deleted Deployment, ReplicaSet, StatefulSet, DaemonSet, Job or
+  CronJob takes the pods it created with it (unless `--cascade=orphan`).
 - **It sorts itself out.** When a later read shows the object healthy now
   (for a pod: running and ready, its last restart more than a minute ago;
   a crash-looping pod looks ready for a moment right after each restart), she

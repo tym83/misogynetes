@@ -359,6 +359,147 @@ func deletedObjects(args []string) []string {
 	return objs
 }
 
+// deletedLine is how kubectl reports an object it deleted: `pod "web-1"
+// deleted`, newer versions add `from shop namespace`. Dry runs end in
+// "(dry run)" and do not match.
+var deletedLine = regexp.MustCompile(`^([A-Za-z0-9.-]+) "([^"]+)" deleted(?: from ([a-z0-9-]+) namespace)?$`)
+
+// deletedNameLine is the same with "-o name": `pod/web-1`.
+var deletedNameLine = regexp.MustCompile(`^([A-Za-z0-9.-]+)/([a-z0-9.-]+)$`)
+
+// deletedInOutput are the objects kubectl says it deleted, whatever picked
+// them: names, "-l" selectors, "-f" files, "--all". She takes kubectl's
+// word for it rather than guessing from the command line.
+func deletedInOutput(args []string, stdout string) []string {
+	if Verb(args) != "delete" {
+		return nil
+	}
+	ns := namespaceOf(args)
+	nameOutput := outputFormat(args) == "name"
+	var objs []string
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		var o string
+		if m := deletedLine.FindStringSubmatch(line); m != nil {
+			objNS := ns
+			if m[3] != "" {
+				objNS = m[3]
+			}
+			o = objectOf(objNS, kindOf(m[1]), m[2])
+		} else if m := deletedNameLine.FindStringSubmatch(line); m != nil && nameOutput {
+			o = objectOf(ns, kindOf(m[1]), m[2])
+		}
+		if o != "" {
+			objs = append(objs, o)
+		}
+	}
+	return objs
+}
+
+// outputFormat is the value of -o/--output, or "".
+func outputFormat(args []string) string {
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		name, value, hasValue := strings.Cut(a, "=")
+		switch {
+		case name == "-o" || name == "--output":
+			if !hasValue && i+1 < len(args) {
+				value = args[i+1]
+			}
+			return value
+		case strings.HasPrefix(a, "-o") && !strings.HasPrefix(a, "--"):
+			return strings.TrimPrefix(strings.TrimPrefix(a, "-o"), "=")
+		}
+	}
+	return ""
+}
+
+// orphans reports "--cascade=orphan": the dependents stay behind.
+func orphans(args []string) bool {
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "--cascade=orphan" || (a == "--cascade" && i+1 < len(args) && args[i+1] == "orphan") {
+			return true
+		}
+	}
+	return false
+}
+
+// hashChars are the characters Kubernetes uses for generated name suffixes
+// and pod-template hashes.
+const hashChars = `[bcdfghjklmnpqrstvwxz2456789]`
+
+type dependent struct {
+	kind   string
+	suffix *regexp.Regexp
+}
+
+func suffix(re string) *regexp.Regexp { return regexp.MustCompile(`^` + re + `$`) }
+
+// dependents are the names a controller gives what it creates, by the kind
+// of the controller: the kind of the dependent and its name after
+// "<controller name>-".
+var dependents = map[string][]dependent{
+	"deployment": {
+		{"replicaset", suffix(hashChars + `{1,10}`)},
+		{"pod", suffix(hashChars + `{1,10}-` + hashChars + `{5}`)},
+	},
+	"replicaset":  {{"pod", suffix(hashChars + `{5}`)}},
+	"daemonset":   {{"pod", suffix(hashChars + `{5}`)}},
+	"job":         {{"pod", suffix(hashChars + `{5}`)}},
+	"statefulset": {{"pod", suffix(`[0-9]+`)}},
+	"cronjob": {
+		{"job", suffix(`[0-9]+`)},
+		{"pod", suffix(`[0-9]+-` + hashChars + `{5}`)},
+	},
+}
+
+// ownedBy reports whether object (namespace/kind/name) is named the way the
+// controller (namespace/kind/name) names what it creates, in its namespace.
+func ownedBy(object, controller string) bool {
+	cns, ckind, cname := splitObject(controller)
+	ons, okind, oname := splitObject(object)
+	if cns != ons && cns != "" && ons != "" {
+		return false
+	}
+	rest, ok := strings.CutPrefix(oname, cname+"-")
+	if !ok {
+		return false
+	}
+	for _, d := range dependents[ckind] {
+		if d.kind == okind && d.suffix.MatchString(rest) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitObject(o string) (ns, kind, name string) {
+	ns, rest, _ := strings.Cut(o, "/")
+	kind, name, _ = strings.Cut(rest, "/")
+	return ns, kind, name
+}
+
+// GoneWithDependents is Gone for objects deleted with the default cascade:
+// a deleted Deployment takes its ReplicaSets and pods with it, so she
+// stops bringing those up too.
+func (c *Cluster) GoneWithDependents(objects []string) {
+	var all []string
+	for _, s := range c.State.Shared {
+		for _, o := range objects {
+			if ownedBy(s.Object, o) {
+				all = append(all, s.Object)
+				break
+			}
+		}
+	}
+	c.Gone(append(all, objects...))
+}
+
 var notFoundLine = regexp.MustCompile(`\(NotFound\): ([A-Za-z0-9.-]+) "([^"]+)" not found`)
 
 // notFound are the objects kubectl said do not exist.

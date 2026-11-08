@@ -339,11 +339,12 @@ func TestAgaSynonyms(t *testing.T) {
 
 // --- end to end, with a fake kubectl on the PATH ---
 
-// nailKubectl logs every call and prints the table in $TABLE for get.
+// nailKubectl logs every call and prints the table in $TABLE for get. A
+// delete with DELETE_EXIT set fails without deleting anything.
 const nailKubectl = `echo "$*" >> "$0.log"
 case "$1" in
 get) if [ "$2" = pods ]; then cat "$TABLE"; else printf 'NAME      STATUS   AGE\ndefault   Active   9d\n'; fi ;;
-delete) echo "pod \"$3\" deleted"; exit "${DELETE_EXIT:-0}" ;;
+delete) if [ "${DELETE_EXIT:-0}" = 0 ]; then echo "pod \"$3\" deleted"; else echo "error: timed out waiting for the condition" >&2; fi; exit "${DELETE_EXIT:-0}" ;;
 esac
 `
 
@@ -409,7 +410,7 @@ func TestNailEndToEnd(t *testing.T) {
 	}
 
 	out, errOut, code = s.run(nail, delWeb...)
-	if code != 7 || out != "pod \"web-1\" deleted\n" || !strings.Contains(plain(errOut), insisted) {
+	if code != 7 || out != "" || !strings.Contains(plain(errOut), insisted) {
 		t.Fatalf("insist: stdout %q stderr %q code %d", out, errOut, code)
 	}
 	typed = append(typed, strings.Join(delWeb, " "))
@@ -500,7 +501,7 @@ func TestNailNeverBlocksPipes(t *testing.T) {
 	for _, mode := range []string{"", "off"} {
 		env := []string{"MISOGYNETES=" + mode, tbl, "DELETE_EXIT=7"}
 		out, errOut, code := s.run(env, delWeb...)
-		if out != "pod \"web-1\" deleted\n" || errOut != "" || code != 7 {
+		if out != "" || errOut != "error: timed out waiting for the condition\n" || code != 7 {
 			t.Errorf("%q delete: stdout %q stderr %q code %d", mode, out, errOut, code)
 		}
 		out, errOut, code = s.run(env, getPods...)
@@ -619,5 +620,115 @@ func TestDeleteThatWentThroughEndsTheNail(t *testing.T) {
 		if code != 0 || strings.Contains(errOut, "web-1") {
 			t.Fatalf("command %d after the delete: stderr %q code %d", i, errOut, code)
 		}
+	}
+}
+
+func TestDeletedInOutput(t *testing.T) {
+	out := `pod "web-1" deleted
+deployment.apps "api" deleted from shop namespace
+pod "db-0" deleted (dry run)
+service "web" deleted from other namespace
+Warning: something
+`
+	for _, tc := range []struct {
+		args []string
+		out  string
+		want string
+	}{
+		{[]string{"delete", "pods", "-l", "app=web", "-n", "shop"}, out,
+			"shop/pod/web-1 shop/deployment/api other/service/web"},
+		{[]string{"delete", "-f", "all.yaml"}, out, "/pod/web-1 shop/deployment/api other/service/web"},
+		{[]string{"delete", "-f", "all.yaml", "-o", "name"}, "pod/web-1\ndeployment.apps/api\n", "/pod/web-1 /deployment/api"},
+		{[]string{"delete", "-f", "all.yaml"}, "pod/web-1\n", ""},
+		{[]string{"get", "pods"}, out, ""},
+	} {
+		if got := strings.Join(deletedInOutput(tc.args, tc.out), " "); got != tc.want {
+			t.Errorf("%v: %q, want %q", tc.args, got, tc.want)
+		}
+	}
+}
+
+func TestOwnedBy(t *testing.T) {
+	for _, tc := range []struct {
+		object, controller string
+		want               bool
+	}{
+		{"shop/pod/web-6d4f8c9b7-xk2lp", "shop/deployment/web", true},
+		{"/pod/web-6d4f8c9b7-xk2lp", "shop/deployment/web", true},
+		{"shop/replicaset/web-6d4f8c9b7", "shop/deployment/web", true},
+		{"other/pod/web-6d4f8c9b7-xk2lp", "shop/deployment/web", false},
+		{"shop/pod/web-api-6d4f8c9b7-xk2lp", "shop/deployment/web", false},
+		{"shop/pod/web-1", "shop/deployment/web", false},
+		{"shop/pod/web-1", "shop/statefulset/web", true},
+		{"shop/pod/web-xk2lp", "shop/daemonset/web", true},
+		{"shop/pod/web-xk2lp", "shop/replicaset/web", true},
+		{"shop/job/backup-28912345", "shop/cronjob/backup", true},
+		{"shop/pod/backup-28912345-xk2lp", "shop/cronjob/backup", true},
+		{"shop/pod/web-6d4f8c9b7-xk2lp", "shop/service/web", false},
+	} {
+		if got := ownedBy(tc.object, tc.controller); got != tc.want {
+			t.Errorf("ownedBy(%q, %q) = %v", tc.object, tc.controller, got)
+		}
+	}
+}
+
+const deployCrashTable = `NAME                   READY   STATUS             RESTARTS      AGE
+web-6d4f8c9b7-xk2lp    0/1     CrashLoopBackOff   6 (40s ago)   9m
+api-7f9c6b8d5-q8wzt    0/1     CrashLoopBackOff   6 (40s ago)   9m
+`
+
+// Deleting a Deployment takes its pods with it, and she stops naming them;
+// a pod of another Deployment stays on her mind.
+func TestDeletedDeploymentTakesItsPods(t *testing.T) {
+	c := cluster(3)
+	c.Observe(getPods, deployCrashTable)
+	if len(c.State.Shared) != 2 {
+		t.Fatalf("shared: %+v", c.State.Shared)
+	}
+	c.GoneWithDependents(deletedInOutput([]string{"delete", "deploy", "web", "-n", "shop"}, `deployment.apps "web" deleted`+"\n"))
+	if got := c.waiting(); len(got) != 1 || !strings.Contains(got[0], "api-7f9c6b8d5-q8wzt") {
+		t.Errorf("waiting after the delete: %q", got)
+	}
+}
+
+// deleteKubectl prints the table in $TABLE for get and whatever is in
+// $DELETED for delete, the way kubectl reports a selector or file delete.
+const deleteKubectl = `case "$1" in
+get) if [ "$2" = pods ]; then cat "$TABLE"; else printf 'NAME      STATUS   AGE\ndefault   Active   9d\n'; fi ;;
+delete) cat "$DELETED" ;;
+esac
+`
+
+func TestDeleteBySelectorOrFileEndsTheNail(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		deleted string
+	}{
+		{"selector", []string{"delete", "pods", "-l", "app=web", "-n", "shop"}, `pod "web-6d4f8c9b7-xk2lp" deleted` + "\n" + `pod "api-7f9c6b8d5-q8wzt" deleted` + "\n"},
+		{"file", []string{"delete", "-f", "shop.yaml"}, `deployment.apps "web" deleted from shop namespace` + "\n" + `deployment.apps "api" deleted from shop namespace` + "\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSandbox(t, deleteKubectl)
+			table := s.table("crash", deployCrashTable)
+			deleted := filepath.Join(s.dir, "deleted")
+			if err := os.WriteFile(deleted, []byte(tc.deleted), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, errOut, _ := s.acting([]string{table}, getPods...); !strings.Contains(plain(errOut), "web-6d4f8c9b7-xk2lp") {
+				t.Fatalf("share: %q", errOut)
+			}
+			env := []string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=0", table, "DELETED=" + deleted}
+			if _, _, code := s.run(env, tc.args...); code != nailExit {
+				t.Fatalf("refusal: code %d", code)
+			}
+			if out, _, code := s.run(env, tc.args...); code != 0 || out != tc.deleted {
+				t.Fatalf("insist: stdout %q code %d", out, code)
+			}
+			_, errOut, _ := s.run(env, "get", "ns")
+			if strings.Contains(errOut, "xk2lp") || strings.Contains(errOut, "q8wzt") {
+				t.Errorf("still bringing up deleted pods: %q", errOut)
+			}
+		})
 	}
 }

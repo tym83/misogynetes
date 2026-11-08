@@ -1,1 +1,7 @@
 _output/
+/dist/
+# binaries from go build
+/misogynetes
+/misogynectl
+/kubectl-misogyn
+/misogynetes-webhook

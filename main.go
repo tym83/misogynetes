@@ -136,7 +136,8 @@ func run(args []string) int {
 
 	cmd := kubectlCommand(kubectl, args)
 	var output *seen
-	if listens(args) {
+	deleting := Verb(args) == "delete"
+	if listens(args) || deleting {
 		// She reads along: every byte still goes to the terminal as it
 		// comes, and she only reads the output of the command you typed.
 		output = &seen{}
@@ -153,10 +154,24 @@ func run(args []string) int {
 	if err != nil {
 		return wrapperError(err)
 	}
-	if gone := deletedObjects(args); code == 0 && len(gone) > 0 {
-		update(func() { c.Gone(gone) })
+	if deleting {
+		// What kubectl says it deleted, even when it failed half-way;
+		// the names typed count once it succeeded.
+		gone := deletedInOutput(args, output.String())
+		if code == 0 {
+			gone = append(gone, deletedObjects(args)...)
+		}
+		if len(gone) > 0 {
+			update(func() {
+				if orphans(args) {
+					c.Gone(gone)
+				} else {
+					c.GoneWithDependents(gone)
+				}
+			})
+		}
 	}
-	if output != nil && code == 0 {
+	if output != nil && code == 0 && !deleting {
 		var lines []string
 		update(func() { lines = c.Observe(args, output.String()) })
 		say(lines)
