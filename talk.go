@@ -19,6 +19,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"regexp"
 	"strings"
 	"time"
@@ -238,7 +239,7 @@ func (c *Cluster) updateTalk(context string, items []TalkItem) []string {
 			items[i].Since = c.Now
 		}
 		c.State.Talk = &Talk{Context: context, Since: c.Now, Items: items}
-		return []string{c.pick(talkLines)}
+		return []string{c.talkLine()}
 	}
 	known := map[string]time.Time{}
 	for _, it := range t.Items {
@@ -256,9 +257,18 @@ func (c *Cluster) updateTalk(context string, items []TalkItem) []string {
 	t.Items, t.Fine, t.Context, t.ClearSince = items, false, context, nil
 	if news && t.Done {
 		t.Done, t.Asked = false, 0
-		return []string{c.pick(talkLines)}
+		return []string{c.talkLine()}
 	}
 	return nil
+}
+
+// talkLine is what she says about the talk she is waiting to have. It is
+// the same line for as long as that talk lasts: she does not rephrase it.
+func (c *Cluster) talkLine() string {
+	t := c.State.Talk
+	h := fnv.New32a()
+	_, _ = fmt.Fprintf(h, "%s\x00%d", t.Context, t.Since.UnixNano())
+	return talkLines[h.Sum32()%uint32(len(talkLines))]
 }
 
 // talkWhat answers "what's wrong?" while she needs to talk: nothing, she's

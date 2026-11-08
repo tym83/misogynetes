@@ -142,7 +142,7 @@ func (c *Cluster) nag() []string {
 	var lines []string
 	if talk {
 		// She does not say what it is about.
-		lines = append(lines, c.pick(talkLines))
+		lines = append(lines, c.talkLine())
 	}
 	if len(waiting) == 0 {
 		return lines
