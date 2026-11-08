@@ -48,7 +48,7 @@ expect_ok() {
   if [[ $code -eq 0 ]]; then pass "$1"; else fail "$1 (code $code)"; fi
 }
 expect_forbidden() {
-  if [[ $code -ne 0 && $out == *"Forbidden"* && $out == *'admission webhook "enforce.misogynetes.dev" denied the request'* && $out == *"pod/web-"* ]]; then
+  if [[ $code -ne 0 && $out == *'admission webhook "enforce.misogynetes.dev" denied the request'* && $out == *"pod/web-"* ]]; then
     pass "$1"
   else
     fail "$1 (code $code)"
@@ -155,11 +155,14 @@ as bob -n "$ENFORCE_NS" rollout restart deployment/web
 expect_forbidden "enforce: rollout restart refused"
 as bob -n "$ENFORCE_NS" scale deployment/web --replicas=2
 expect_forbidden "enforce: scale refused"
+if [[ $out == *"Error from server (Forbidden)"* ]]; then pass "enforce: kubectl names it Forbidden"; else fail "enforce: kubectl does not name it Forbidden"; fi
+as bob -n "$ENFORCE_NS" scale deployment/web --replicas=2 -v=6
+if [[ $out == *"403 Forbidden"* ]]; then pass "enforce: the API server answers 403"; else fail "enforce: no 403 from the API server"; fi
 as bob -n "$ENFORCE_NS" exec calm -- true
 expect_forbidden "enforce: exec (CONNECT pods/exec) refused"
 as bob -n "$ENFORCE_NS" delete pod calm --wait=false
 expect_forbidden "enforce: delete refused"
-as bob -n "$ENFORCE_NS" rollout restart deployment/web --dry-run=server
+as bob -n "$ENFORCE_NS" scale deployment/web --replicas=2 --dry-run=server
 expect_forbidden "enforce: a server-side dry run is refused too"
 as_sa system:serviceaccount:argocd:argocd-application-controller -n "$ENFORCE_NS" scale deployment/web --replicas=2
 expect_silent_ok "enforce: Argo-like service account scales untouched"
@@ -193,6 +196,8 @@ else
 fi
 as bob -n "$ENFORCE_NS" scale deployment/web --replicas=2
 expect_forbidden "break-glass: scale is still refused (a Scale carries no annotations)"
+as bob -n "$ENFORCE_NS" patch deployment web --type=merge -p '{"spec":{"replicas":2}}'
+expect_warning "break-glass: patching replicas on the annotated workload goes through" "break-glass"
 as bob -n "$ENFORCE_NS" annotate pod calm misogynetes.dev/break-glass=INC-43
 expect_ok "break-glass: annotating the pod goes through"
 as bob -n "$ENFORCE_NS" delete pod calm --wait=false
