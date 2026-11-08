@@ -1,0 +1,38 @@
+name: e2e
+
+# The webhook chart on a throwaway kind cluster: warn and enforce modes,
+# heard-at, break-glass, controllers and service accounts passing untouched,
+# failurePolicy Ignore, both certificate modes; and the CLI's reading of
+# kubectl delete output against the real kubectl. See hack/e2e.sh.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cert: [helm, cert-manager]
+    name: kind (${{ matrix.cert }} cert)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: e2e
+      - run: docker build -t misogynetes-webhook:e2e .
+      - run: kind load docker-image misogynetes-webhook:e2e --name e2e
+      - run: hack/e2e.sh
+        env:
+          CERT_MODE: ${{ matrix.cert }}
+          IMAGE: misogynetes-webhook:e2e

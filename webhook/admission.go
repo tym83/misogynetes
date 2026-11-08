@@ -81,7 +81,11 @@ type Response struct {
 
 // Status explains a denial.
 type Status struct {
-	Code    int32  `json:"code,omitempty"`
+	Code int32 `json:"code,omitempty"`
+	// Reason is what kubectl names the error by: "Error from server
+	// (Forbidden)". Without it the API server keeps the code but kubectl
+	// prints a bare "Error from server".
+	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`
 }
 

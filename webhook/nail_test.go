@@ -119,7 +119,7 @@ func TestEnforceRefusesUntilHeard(t *testing.T) {
 	c := &fakeCluster{pods: pods(t, crashing)}
 	m := misogynist(c)
 	r := m.Decide(Enforce, request("UPDATE", "alice"))
-	if r.Allowed || r.Result == nil || r.Result.Code != http.StatusForbidden ||
+	if r.Allowed || r.Result == nil || r.Result.Code != http.StatusForbidden || r.Result.Reason != "Forbidden" ||
 		!strings.Contains(r.Result.Message, "pod/web-1") || !strings.Contains(r.Result.Message, "kubectl annotate namespace shop misogynetes.dev/heard-at=") {
 		t.Fatalf("not refused: %+v", r)
 	}
