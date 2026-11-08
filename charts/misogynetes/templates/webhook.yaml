@@ -1,0 +1,97 @@
+{{- /*
+TLS for the webhook and the CA the API server trusts it with. With
+cert-manager, a self-signed Issuer and a Certificate, and the CA is
+injected into the webhook configuration. Without it, generated here once
+and reused on every upgrade.
+*/ -}}
+{{- $name := include "webhook.fullname" . -}}
+{{- $service := printf "%s.%s.svc" $name .Release.Namespace -}}
+{{- $crt := "" -}}{{- $key := "" -}}{{- $ca := "" -}}
+{{- if .Values.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webhook.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webhook.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $name }}-tls
+  dnsNames:
+    - {{ $service }}
+  issuerRef:
+    name: {{ $name }}
+{{- else }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace (printf "%s-tls" $name) -}}
+{{- if and $existing (index $existing.data "ca.crt") -}}
+{{- $crt = index $existing.data "tls.crt" -}}
+{{- $key = index $existing.data "tls.key" -}}
+{{- $ca = index $existing.data "ca.crt" -}}
+{{- else -}}
+{{- $caCert := genCA (printf "%s-ca" $name) 3650 -}}
+{{- $cert := genSignedCert $service nil (list $service (printf "%s.%s" $name .Release.Namespace) $name) 3650 $caCert -}}
+{{- $crt = $cert.Cert | b64enc -}}
+{{- $key = $cert.Key | b64enc -}}
+{{- $ca = $caCert.Cert | b64enc -}}
+{{- end }}
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/tls
+metadata:
+  name: {{ $name }}-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "webhook.labels" . | nindent 4 }}
+data:
+  tls.crt: {{ $crt }}
+  tls.key: {{ $key }}
+  ca.crt: {{ $ca }}
+{{- end }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "webhook.labels" . | nindent 4 }}
+  {{- if .Values.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ $name }}
+  {{- end }}
+webhooks:
+  {{- range $mode := list "warn" "enforce" }}
+  - name: {{ $mode }}.misogynetes.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    # If she is down or slow, nothing waits for her and nothing is refused.
+    failurePolicy: Ignore
+    matchPolicy: Equivalent
+    timeoutSeconds: {{ $.Values.timeoutSeconds }}
+    clientConfig:
+      service:
+        name: {{ $name }}
+        namespace: {{ $.Release.Namespace }}
+        path: /{{ $mode }}
+      {{- if not $.Values.certManager.enabled }}
+      caBundle: {{ $ca }}
+      {{- end }}
+    {{- include "webhook.namespaceSelector" (dict "root" $ "mode" (index $.Values.namespaceLabel $mode)) | nindent 4 }}
+    rules:
+      {{- range $.Values.rules }}
+      - apiGroups: {{ toJson .apiGroups }}
+        apiVersions: {{ toJson .apiVersions }}
+        resources: {{ toJson .resources }}
+        operations: {{ toJson .operations }}
+        scope: Namespaced
+      {{- end }}
+  {{- end }}

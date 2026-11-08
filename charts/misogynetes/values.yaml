@@ -1,0 +1,73 @@
+# Misogynetes is a punishment for misogynists. Nothing happens until a
+# namespace opts in with a label:
+#   kubectl label namespace shop misogynetes.dev/mode=warn     # she shares
+#   kubectl label namespace shop misogynetes.dev/mode=enforce  # she also refuses fixes until heard
+# There is no cluster-wide mode.
+namespaceLabel:
+  key: misogynetes.dev/mode
+  warn: warn
+  enforce: enforce
+
+# Namespaces she never looks at, labelled or not. The release namespace is
+# always added.
+excludedNamespaces:
+  - kube-system
+  - kube-public
+  - kube-node-lease
+
+# What counts as a fix. Secrets are deliberately absent: she never sees them.
+rules:
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods", "services", "configmaps"]
+    operations: ["CREATE", "UPDATE", "DELETE"]
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods/exec"]
+    operations: ["CONNECT"]
+  - apiGroups: ["apps"]
+    apiVersions: ["v1"]
+    resources: ["deployments", "deployments/scale", "statefulsets", "statefulsets/scale", "daemonsets", "replicasets"]
+    operations: ["CREATE", "UPDATE", "DELETE"]
+  - apiGroups: ["batch"]
+    apiVersions: ["v1"]
+    resources: ["jobs", "cronjobs"]
+    operations: ["CREATE", "UPDATE", "DELETE"]
+
+# How long she keeps quiet to the same person about the same namespace in
+# warn mode. Refusals in enforce mode are never rate-limited.
+quietFor: 5m
+
+# Share with (and in enforce mode, refuse) service accounts too: Argo CD,
+# Flux, operators. Those in kube-system never hear her.
+serviceAccounts: false
+
+# Silence her without uninstalling: every request is allowed, nothing said.
+off: false
+
+image:
+  repository: ghcr.io/tym83/misogynetes-webhook
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# TLS for the webhook. Without cert-manager the chart generates a CA and a
+# certificate once and keeps them across upgrades.
+certManager:
+  enabled: false
+
+timeoutSeconds: 3
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

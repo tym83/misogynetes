@@ -1,6 +1,7 @@
 name: release
 
-# On a v* tag: build the krew archives for darwin and linux (amd64, arm64),
+# On a v* tag: push the webhook image and its Helm chart to ghcr.io, and
+# build the krew archives for darwin and linux (amd64, arm64),
 # fill their sha256 into the krew manifest and publish both as a GitHub
 # release, so the plugin installs with
 #   kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/download/<tag>/misogyn.yaml
@@ -11,11 +12,12 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -25,9 +27,20 @@ jobs:
           go-version-file: go.mod
       - run: go test -race ./...
       - run: hack/krew-release.sh "${GITHUB_REF_NAME}" dist
+      - name: Push the webhook image
+        run: |
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker buildx create --use
+          docker buildx build --push --platform linux/amd64,linux/arm64 \
+            -t "ghcr.io/tym83/misogynetes-webhook:${GITHUB_REF_NAME}" .
+      - name: Push the chart
+        run: |
+          echo "${GH_TOKEN}" | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          helm package charts/misogynetes --version "${GITHUB_REF_NAME#v}" --app-version "${GITHUB_REF_NAME}" -d dist
+          helm push "dist/misogynetes-${GITHUB_REF_NAME#v}.tgz" oci://ghcr.io/tym83/charts
       - name: Create release
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             --title "Misogynetes ${GITHUB_REF_NAME}" \
             --generate-notes \
-            dist/*.tar.gz dist/misogyn.yaml
+            dist/*.tar.gz dist/*.tgz dist/misogyn.yaml
