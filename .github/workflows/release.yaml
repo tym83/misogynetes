@@ -5,10 +5,19 @@ name: release
 # fill their sha256 into the krew manifest and publish both as a GitHub
 # release, so the plugin installs with
 #   kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/download/<tag>/misogyn.yaml
+#
+# Run by hand (workflow_dispatch) it is a dry run: the same multi-arch image
+# build, chart package and krew archives, with nothing pushed or released.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build as (dry run, nothing is pushed)
+        default: v0.0.0-dryrun
+        required: true
 
 permissions:
   contents: write
@@ -20,27 +29,47 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - run: go test -race ./...
-      - run: hack/krew-release.sh "${GITHUB_REF_NAME}" dist
-      - name: Push the webhook image
+      - run: hack/krew-release.sh "${VERSION}" dist
+      - name: Build (and on a tag push) the webhook image
         run: |
-          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-          docker buildx create --use
-          docker buildx build --push --platform linux/amd64,linux/arm64 \
-            -t "ghcr.io/tym83/misogynetes-webhook:${GITHUB_REF_NAME}" .
-      - name: Push the chart
+          if [ "${DRY_RUN}" = true ]; then
+            out=(--output type=image,push=false)
+          else
+            echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+            out=(--push)
+          fi
+          docker buildx build "${out[@]}" --platform linux/amd64,linux/arm64 \
+            -t "ghcr.io/tym83/misogynetes-webhook:${VERSION}" .
+      - name: Package (and on a tag push) the chart
         run: |
+          helm package charts/misogynetes --version "${VERSION#v}" --app-version "${VERSION}" -d dist
+          if [ "${DRY_RUN}" = true ]; then
+            helm show chart "dist/misogynetes-${VERSION#v}.tgz"
+            exit 0
+          fi
           echo "${GH_TOKEN}" | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-          helm package charts/misogynetes --version "${GITHUB_REF_NAME#v}" --app-version "${GITHUB_REF_NAME}" -d dist
-          helm push "dist/misogynetes-${GITHUB_REF_NAME#v}.tgz" oci://ghcr.io/tym83/charts
+          helm push "dist/misogynetes-${VERSION#v}.tgz" oci://ghcr.io/tym83/charts
       - name: Create release
+        if: env.DRY_RUN != 'true'
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "Misogynetes ${GITHUB_REF_NAME}" \
+          gh release create "${VERSION}" \
+            --title "Misogynetes ${VERSION}" \
             --generate-notes \
             dist/*.tar.gz dist/*.tgz dist/misogyn.yaml
+      - name: Keep the dry-run artifacts
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dry-run
+          path: dist/
+          retention-days: 7
