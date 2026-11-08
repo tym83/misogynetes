@@ -207,7 +207,22 @@ expect_forbidden "break-glass: delete of an object without it is still refused"
 kubectl -n "$ENFORCE_NS" annotate deployment web misogynetes.dev/break-glass- >/dev/null 2>&1 || true
 
 echo "== heard-at lifts the refusal"
-crashing "$ENFORCE_NS"
+# Let the stalled rollout settle (the Argo-like account is never refused),
+# so no pod gets into trouble after she has been heard.
+as_sa system:serviceaccount:argocd:argocd-application-controller -n "$ENFORCE_NS" scale deployment/web --replicas=1
+settled() {
+  local prev="" now
+  for _ in $(seq 60); do
+    crashing "$ENFORCE_NS"
+    now=$(kubectl -n "$ENFORCE_NS" get pods -l app=web -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}')
+    [[ $now == "$prev" ]] && return 0
+    prev=$now
+    sleep 10
+  done
+  echo "web pods in $ENFORCE_NS never settled" >&2
+  exit 1
+}
+settled
 sleep 2
 kubectl annotate namespace "$ENFORCE_NS" misogynetes.dev/heard-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
 forget_cache
@@ -215,10 +230,10 @@ kubectl -n "$ENFORCE_NS" run calm2 --image=busybox:1.36 --restart=Never -- sleep
 kubectl -n "$ENFORCE_NS" wait --for=condition=Ready pod/calm2 --timeout=3m
 as bob -n "$ENFORCE_NS" exec calm2 -- true
 expect_ok "heard: exec goes through"
-as bob -n "$ENFORCE_NS" scale deployment/web --replicas=2
-expect_ok "heard: scale goes through"
 as bob -n "$ENFORCE_NS" rollout restart deployment/web
 expect_ok "heard: rollout restart goes through"
+as bob -n "$ENFORCE_NS" scale deployment/web --replicas=2
+expect_ok "heard: scale goes through"
 
 echo "== a grievance newer than heard-at is unheard again"
 kubectl annotate namespace "$ENFORCE_NS" misogynetes.dev/heard-at="2000-01-01T00:00:00Z" --overwrite
