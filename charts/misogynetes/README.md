@@ -73,8 +73,9 @@ mode. Install it on your own cluster. Don't install it on anyone else's.
 
 The break-glass annotation (`misogynetes.dev/break-glass=<reason>`) is read
 from the object being created or updated, and from the existing object for a
-delete: annotate it first, then delete. `kubectl exec` has no object to
-annotate; listen first.
+delete: annotate it first, then delete. `kubectl scale` sends a Scale, which
+carries no annotations: patch `spec.replicas` on the annotated workload
+instead. `kubectl exec` has no object to annotate; listen first.
 
 ## Values
 

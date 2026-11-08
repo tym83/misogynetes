@@ -113,7 +113,7 @@ func (m *Misogynist) Decide(mode Mode, r *Request) *Response {
 			return Allow(persona.Insisted, fmt.Sprintf("(break-glass %q on %s: it went through. She is not done with you.)", reason, what(r)))
 		}
 		return &Response{Allowed: false, Result: &Status{
-			Code: http.StatusForbidden,
+			Code: http.StatusForbidden, Reason: "Forbidden",
 			Message: fmt.Sprintf("%s %s Nothing was changed. Listen first: kubectl annotate namespace %s %s=$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ) --overwrite "+
 				"(or, in an emergency, annotate the object %s=<reason>). Misogynetes is a satire of misogynists; the joke is on them.",
 				m.pick(persona.HurtLines), share, r.Namespace, HeardAnnotation, BreakGlassAnnotation),
