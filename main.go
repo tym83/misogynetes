@@ -32,6 +32,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 func main() {
@@ -225,9 +227,10 @@ func actsUp() bool {
 	return terminal(os.Stdout) && terminal(os.Stderr)
 }
 
+// terminal reports a real terminal. A character device is not enough:
+// /dev/null is one too, and "2>/dev/null" is a script, not a person.
 func terminal(f *os.File) bool {
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 func passthrough(kubectl string, args []string) int {
