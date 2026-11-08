@@ -1,0 +1,13 @@
+apiVersion: v2
+name: misogynetes
+description: Misogynetes, a punishment for misogynists, as an admission webhook. Shares grievances as warnings; refuses fixes only in namespaces that opted into enforce mode.
+type: application
+# Set from the git tag at release.
+version: 0.0.0
+appVersion: v0.0.0
+home: https://github.com/tym83/misogynetes
+sources:
+  - https://github.com/tym83/misogynetes
+annotations:
+  licenses: Apache-2.0
+kubeVersion: ">=1.19.0-0"

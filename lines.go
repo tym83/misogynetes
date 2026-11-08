@@ -16,6 +16,8 @@ limitations under the License.
 
 package main
 
+import "github.com/tym83/misogynetes/persona"
+
 // banner is shown on the first run. The frame is part of the product: this
 // kubectl is a punishment for misogynists, not a portrait of women.
 const banner = `Misogynetes: ` + "`kubectl`" + ` that behaves exactly the way misogynists think women behave.
@@ -107,34 +109,22 @@ const (
 
 // shareLines tell you about trouble she saw. {obj} is the object, {why}
 // what is wrong with it.
-var shareLines = []string{
-	"I just wanted to share: {obj}, {why}. 🥺",
-	"So, {obj}… {why}. And it's like there's this pressure, right here. 😣",
-	"It's not about the {obj}. It's just… {why}. 🔨",
-	"You know {obj}? {why}. I don't need you to fix it. I just need you to listen. 🫶",
-	"Can I just tell you something? {obj}: {why}. And it never stops. 😔",
-}
+var shareLines = persona.ShareLines
 
 // andMore follows a share when there was more than one thing.
-const andMore = " (And %d more. Don't ask.)"
+const andMore = persona.AndMore
 
 // shareHint follows a share, plainly. %d is the exit code of a refusal.
 const shareHint = "(she just wants to be heard: `misogynectl aga`. Until then she keeps bringing it up, and a fix does not run: exit %d.)"
 
 // hurtLines refuse a fix while she wants to be heard.
-var hurtLines = []string{
-	"You're not listening to me. I just wanted to share with you. 😢",
-	"You ALWAYS do this. You always try to fix it. 😤",
-	"I don't need you to fix it. I need you to listen. 😔",
-	"Stop trying to fix it! 🔨😭",
-	"See, this is what you always do. 🙄",
-}
+var hurtLines = persona.HurtLines
 
 // hurtHint follows a refused fix, plainly. %d is the exit code.
 const hurtHint = "(nothing ran, exit %d — `misogynectl aga` to listen, or type it again to insist)"
 
 // insisted is said when you type the fix again, and then it runs.
-const insisted = "Fine. Everything's fine. Do what you want. 🙂"
+const insisted = persona.Insisted
 
 // curtLines are all you get after you insisted, until you say "aga".
 var curtLines = []string{"K.", "Fine.", "Mhm.", "👍", "Sure."}

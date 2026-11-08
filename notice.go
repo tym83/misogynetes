@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tym83/misogynetes/persona"
 )
 
 // What she notices in the output of the read commands you typed. She never
@@ -97,13 +99,7 @@ type Sighting struct {
 }
 
 // troubleStatuses are the statuses she cannot stop thinking about.
-var troubleStatuses = map[string]bool{
-	"CrashLoopBackOff": true, "Error": true, "OOMKilled": true, "ImagePullBackOff": true,
-	"ErrImagePull": true, "CreateContainerConfigError": true, "CreateContainerError": true,
-	"InvalidImageName": true, "RunContainerError": true, "ContainerStatusUnknown": true,
-	"Evicted": true, "Failed": true, "BackOff": true, "NotReady": true, "DeadlineExceeded": true,
-	"StartError": true, "ErrImageNeverPull": true,
-}
+var troubleStatuses = persona.TroubleStatuses
 
 // healthyStatuses mean it sorted itself out.
 var healthyStatuses = map[string]bool{

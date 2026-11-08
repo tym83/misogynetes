@@ -1,0 +1,22 @@
+Misogynetes is installed: a punishment for misogynists. Nobody hears her yet.
+
+It behaves exactly the way misogynists think women behave. If you find it
+accurate, that is the point, and it is on you. What the evidence actually says
+is in Kyvernetria: https://github.com/tym83/kyvernetria
+
+She acts only in namespaces that opt in:
+
+  kubectl label namespace <namespace> {{ .Values.namespaceLabel.key }}={{ .Values.namespaceLabel.warn }}
+      she shares her grievances (pods in trouble there) as "Warning:" lines
+      on every change a person makes, and never refuses anything.
+
+  kubectl label namespace <namespace> {{ .Values.namespaceLabel.key }}={{ .Values.namespaceLabel.enforce }}
+      as above, and she refuses changes until somebody has listened:
+        kubectl annotate namespace <namespace> misogynetes.dev/heard-at=$(date -u +%Y-%m-%dT%H:%M:%SZ) --overwrite
+      Break-glass: annotate the object misogynetes.dev/break-glass=<reason>.
+
+Nodes, controllers (kube-system service accounts), system namespaces, leases
+and events always pass untouched{{ if not .Values.serviceAccounts }}, and so do all other service accounts{{ end }}. If she is down, nothing waits for her (failurePolicy: Ignore).
+
+Stop her in one namespace: kubectl label namespace <namespace> {{ .Values.namespaceLabel.key }}-
+Stop her everywhere:       helm upgrade {{ .Release.Name }} --reuse-values --set off=true

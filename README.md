@@ -272,6 +272,40 @@ It hides errors from you, which is the joke. It does not hide anything else.
 - `misogynectl about` says what this is, who it is for, and how to make it
   stop.
 
+## Server mode
+
+She also comes as an admission webhook, for everyone who changes things in
+a namespace, whatever client they use: kubectl, k9s, Lens, Argo CD. Her
+grievances are the pods in trouble in that namespace, and she shares them
+through admission warnings, the `Warning:` lines every client already shows:
+
+```text
+$ kubectl -n shop set image deploy/web web=nginx:1.27
+Warning: I just wanted to share: pod/web-6d4f8c9b7-xk2lp, it's CrashLoopBackOff. 🥺
+Warning: (she just wants to be heard: kubectl annotate namespace shop misogynetes.dev/heard-at=<now>. Misogynetes, a satire of misogynists.)
+deployment.apps/web image updated
+```
+
+A namespace opts in with a label, and only a namespace labelled for
+enforce mode gets refusals: there, a change is refused until somebody has
+listened, by annotating the namespace with `misogynetes.dev/heard-at`. An
+object annotated `misogynetes.dev/break-glass=<reason>` goes through anyway.
+
+```bash
+helm install misogynetes oci://ghcr.io/tym83/charts/misogynetes \
+  --version <version> --namespace misogynetes --create-namespace
+kubectl label namespace shop misogynetes.dev/mode=warn       # shares only
+kubectl label namespace lab  misogynetes.dev/mode=enforce    # also refuses fixes
+```
+
+Nothing happens until a namespace is labelled, and there is no cluster-wide
+mode. Nodes, controllers and service accounts (unless opted in), system
+namespaces, leases, events and Secrets always pass untouched. The webhook
+has `failurePolicy: Ignore`, allows everything when it cannot read the
+cluster, and can only read pods and namespaces. Warnings reach the same
+person about the same namespace at most once in 5 minutes. Details are in the
+[chart README](charts/misogynetes/README.md).
+
 ## Install
 
 As a kubectl plugin, with [krew](https://krew.sigs.k8s.io/):
