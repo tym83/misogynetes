@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -167,5 +168,37 @@ func TestTalkFlickerIsNotFine(t *testing.T) {
 	c.Now = c.Now.Add(calmFor)
 	if got := c.updateTalk("prod", nil); len(got) != 1 || got[0] != forgetIt {
 		t.Errorf("calm for a minute: %q", got)
+	}
+}
+
+// One talk, one line: she does not rephrase "we need to talk" from one
+// command to the next, whatever her mood picks elsewhere.
+func TestTalkLineStaysTheSameForOneTalk(t *testing.T) {
+	items := func() []TalkItem { return []TalkItem{{Object: "/node/node-2", Why: "node NotReady"}} }
+	seen := map[string]bool{}
+	for seed := int64(0); seed < 20; seed++ {
+		c := cluster(3)
+		c.Rand = rand.New(rand.NewSource(seed))
+		first := c.updateTalk("prod", items())
+		if len(first) != 1 {
+			t.Fatalf("seed %d: %v", seed, first)
+		}
+		for i := 0; i < 10; i++ {
+			c.Now = c.Now.Add(time.Minute)
+			if got := c.Before([]string{"get", "ns"}).Say; len(got) == 0 || got[0] != first[0] {
+				t.Fatalf("seed %d, command %d: %v, want %q", seed, i, got, first[0])
+			}
+		}
+		seen[first[0]] = true
+	}
+	// A new talk may start with another line.
+	c := cluster(3)
+	for i := 0; len(seen) < 2 && i < 50; i++ {
+		c.State.Talk = nil
+		c.Now = c.Now.Add(time.Hour)
+		seen[c.updateTalk("prod", items())[0]] = true
+	}
+	if len(seen) < 2 {
+		t.Errorf("every talk opens with the same line: %v", seen)
 	}
 }

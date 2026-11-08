@@ -107,7 +107,7 @@ You didn't even try to fix it. That's all I ever wanted. 💕
 
 - **She shares.** When the output of your own `get`, `describe`, `logs` or
   `events` shows trouble (`CrashLoopBackOff`, `Error`, `OOMKilled`,
-  `ImagePullBackOff`, `NotReady`, a recent restart, a `Warning` event,
+  `ImagePullBackOff`, `NotReady`, a restart in the last minute, a `Warning` event,
   errors in the logs), she says so after kubectl's output and remembers the
   object. She reads only table and description output: `-o yaml`, `-o json`
   and the like are left alone.
@@ -127,8 +127,12 @@ You didn't even try to fix it. That's all I ever wanted. 💕
   code is **75**. Type the same command again within 2 minutes to insist: it
   runs with kubectl's own exit code, she says "Fine. Everything's fine. Do
   what you want." and from then on answers every command curtly, on top of
-  the reminders, until `misogynectl aga`.
-- **It sorts itself out.** When a later read shows the object healthy, she
+  the reminders, until `misogynectl aga`. If the fix deleted the object
+  she was talking about (or kubectl later says it is not found), she stops
+  naming it; the curt answers stay until `aga`.
+- **It sorts itself out.** When a later read shows the object healthy now
+  (for a pod: running and ready, its last restart more than a minute ago;
+  a crash-looping pod looks ready for a moment right after each restart), she
   says so and thanks you for listening, with something extra if all you did
   was listen. If you never listened, it is "sorted itself out. Not that you'd
   notice.", and she still wants to be heard about it until `aga`.
@@ -248,7 +252,8 @@ It hides errors from you, which is the joke. It does not hide anything else.
 - Her own commands (`sorry`, `what`, `flowers`, `aga` and its synonyms,
   `who`, `leave-me-alone`, `come-back`, `about`) count only as the first word. `misogynectl --as what get pods` is kubectl's.
 - It acts up only for a person at a terminal, with both stdout and stderr on
-  it. In pipes (`misogynectl get pods | grep web` included), scripts and CI it
+  it. In pipes (`misogynectl get pods | grep web` included), with output
+  thrown away (`2>/dev/null` included), in scripts and CI it
   is plain `kubectl`, errors included. `--help` is kubectl's own help.
 - `MISOGYNETES=off` makes it plain `kubectl` anywhere and stops her watcher;
   `MISOGYNETES=always` makes it act up even into a pipe (her watcher still

@@ -38,8 +38,11 @@ const watchCommand = "__watch"
 // findTTY is the path of the terminal on stderr, found by its device
 // number, or "" when there is none.
 func findTTY() string {
+	if !terminal(os.Stderr) {
+		return ""
+	}
 	info, err := os.Stderr.Stat()
-	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+	if err != nil {
 		return ""
 	}
 	want, ok := info.Sys().(*syscall.Stat_t)

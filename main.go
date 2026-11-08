@@ -32,6 +32,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 func main() {
@@ -142,11 +144,17 @@ func run(args []string) int {
 	}
 	code, err := runKubectl(cmd, args, func(stderr string) {
 		var lines []string
-		update(func() { lines = c.Failed(args, stderr) })
+		update(func() {
+			lines = c.Failed(args, stderr)
+			c.Gone(notFound(args, stderr))
+		})
 		say(lines)
 	})
 	if err != nil {
 		return wrapperError(err)
+	}
+	if gone := deletedObjects(args); code == 0 && len(gone) > 0 {
+		update(func() { c.Gone(gone) })
 	}
 	if output != nil && code == 0 {
 		var lines []string
@@ -225,9 +233,10 @@ func actsUp() bool {
 	return terminal(os.Stdout) && terminal(os.Stderr)
 }
 
+// terminal reports a real terminal. A character device is not enough:
+// /dev/null is one too, and "2>/dev/null" is a script, not a person.
 func terminal(f *os.File) bool {
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 func passthrough(kubectl string, args []string) int {

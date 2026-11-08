@@ -111,8 +111,11 @@ var healthyStatuses = map[string]bool{
 	"Active": true, "Bound": true, "Available": true,
 }
 
-// recentRestart: a restart this recent means it is still restarting.
-const recentRestart = 10 * time.Minute
+// recentRestart: a restart this recent means it is still restarting. A
+// crash-looping pod is Running, even ready, for a moment between crashes,
+// so one look right after a restart is not "healthy". After that she goes
+// by how the pod is now, however many restarts it had before.
+const recentRestart = time.Minute
 
 // kinds are the short and plural names of the kinds she cares about.
 var kinds = map[string]string{
