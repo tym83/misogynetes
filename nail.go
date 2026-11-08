@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -309,4 +310,65 @@ func (c *Cluster) forget() {
 	if !c.unheard() {
 		c.State.Ignored = 0
 	}
+}
+
+// Gone lets go of what she was waiting to be heard about when the object
+// itself is gone: she does not keep bringing up a pod that no longer
+// exists. Being hurt, or sulking, is another matter and stays.
+func (c *Cluster) Gone(objects []string) {
+	for _, o := range objects {
+		for i := c.find(o); i >= 0; i = c.find(o) {
+			c.State.Shared = append(c.State.Shared[:i], c.State.Shared[i+1:]...)
+		}
+	}
+	if len(c.State.Shared) == 0 {
+		c.State.Shared = nil
+	}
+	c.forget()
+}
+
+// deletedObjects are the objects a delete command names: "delete pod a b",
+// "delete pod/a deploy/b". Selectors and files name nothing she can know.
+func deletedObjects(args []string) []string {
+	words := Words(args)
+	if len(words) < 2 || words[0] != "delete" {
+		return nil
+	}
+	ns := namespaceOf(args)
+	var objs []string
+	add := func(o string) {
+		if o != "" {
+			objs = append(objs, o)
+		}
+	}
+	if strings.Contains(words[1], "/") {
+		for _, w := range words[1:] {
+			if strings.Contains(w, "/") {
+				add(objectOf(ns, "", w))
+			}
+		}
+		return objs
+	}
+	if strings.Contains(words[1], ",") {
+		return nil
+	}
+	kind := kindOf(words[1])
+	for _, name := range words[2:] {
+		add(objectOf(ns, kind, name))
+	}
+	return objs
+}
+
+var notFoundLine = regexp.MustCompile(`\(NotFound\): ([A-Za-z0-9.-]+) "([^"]+)" not found`)
+
+// notFound are the objects kubectl said do not exist.
+func notFound(args []string, stderr string) []string {
+	ns := namespaceOf(args)
+	var objs []string
+	for _, m := range notFoundLine.FindAllStringSubmatch(stderr, -1) {
+		if o := objectOf(ns, kindOf(m[1]), m[2]); o != "" {
+			objs = append(objs, o)
+		}
+	}
+	return objs
 }

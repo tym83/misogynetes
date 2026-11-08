@@ -530,3 +530,94 @@ func TestTeeIsByteIdentical(t *testing.T) {
 		t.Errorf("tee changed stdout: %d bytes vs %d, code %d", len(out), len(raw), code)
 	}
 }
+
+// Once the pod is gone, so is the nail: she does not keep naming a pod
+// that no longer exists. The sulk from being overruled stays until "aga".
+func TestDeletedObjectIsNoLongerBroughtUp(t *testing.T) {
+	c := cluster(3)
+	c.Observe(getPods, crashTable)
+	c.Before(delWeb)
+	c.Now = c.Now.Add(time.Second)
+	if p := c.Before(delWeb); !p.Run {
+		t.Fatalf("insisting: %+v", p)
+	}
+	c.Gone(deletedObjects(delWeb))
+	if c.unheard() || len(c.State.Shared) != 0 || c.State.Ignored != 0 {
+		t.Fatalf("still waiting about a deleted pod: %+v", c.State)
+	}
+	said := remind(t, c, []string{"get", "ns"})
+	if len(said) != 1 || !contains(curtLines, said[0]) || contains(said, "web-1") {
+		t.Errorf("after the delete: %q", said)
+	}
+}
+
+func TestDeletedObjects(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{delWeb, "shop/pod/web-1"},
+		{[]string{"delete", "pods", "a", "b"}, "/pod/a /pod/b"},
+		{[]string{"-n", "shop", "delete", "pod/a", "deploy/web"}, "shop/pod/a shop/deployment/web"},
+		{[]string{"delete", "node", "node-2"}, "/node/node-2"},
+		{[]string{"delete", "pod", "-l", "app=web"}, ""},
+		{[]string{"delete", "-f", "web.yaml"}, ""},
+		{[]string{"delete", "pod,svc", "web"}, ""},
+		{[]string{"get", "pod", "web-1"}, ""},
+	} {
+		if got := strings.Join(deletedObjects(tc.args), " "); got != tc.want {
+			t.Errorf("%v: %q, want %q", tc.args, got, tc.want)
+		}
+	}
+}
+
+func TestNotFoundIsGone(t *testing.T) {
+	c := cluster(3)
+	c.Observe(getPods, crashTable)
+	stderr := `Error from server (NotFound): pods "web-1" not found` + "\n"
+	if got := strings.Join(notFound(getPods, stderr), " "); got != "shop/pod/web-1" {
+		t.Fatalf("notFound: %q", got)
+	}
+	c.Gone(notFound([]string{"get", "pods", "web-1"}, stderr))
+	if c.unheard() {
+		t.Errorf("still waiting about a pod that is not found: %+v", c.State.Shared)
+	}
+}
+
+// She goes by how the pod is now: running and ready, with its last restart
+// over a minute ago, it sorted itself out, however recent the trouble was.
+func TestSortedItselfOutAsSoonAsItIsHealthy(t *testing.T) {
+	c := cluster(3)
+	c.Observe(getPods, crashTable)
+	c.Aga()
+	c.Now = c.Now.Add(2 * time.Minute)
+	settling := "NAME     READY   STATUS    RESTARTS      AGE\nweb-1    1/1     Running   7 (30s ago)   11m\n"
+	if got := c.Observe(getPods, settling); len(got) != 0 {
+		t.Errorf("just restarted, already sorted out: %q", got)
+	}
+	settled := "NAME     READY   STATUS    RESTARTS     AGE\nweb-1    1/1     Running   7 (2m ago)   13m\n"
+	if got := c.Observe(getPods, settled); !contains(got, "pod/web-1 in shop sorted itself out") {
+		t.Errorf("healthy now, not sorted out: %q", got)
+	}
+}
+
+func TestDeleteThatWentThroughEndsTheNail(t *testing.T) {
+	s := newSandbox(t, nailKubectl)
+	crash := s.table("crash", crashTable)
+	nail := []string{"MISOGYNETES=always", "MISOGYNETES_DAY=3", "MISOGYNETES_SEED=0", crash}
+	if _, errOut, _ := s.acting([]string{crash}, getPods...); !strings.Contains(plain(errOut), "pod/web-1 in shop") {
+		t.Fatalf("share: %q", errOut)
+	}
+	if _, _, code := s.run(nail, delWeb...); code != nailExit {
+		t.Fatalf("refusal: code %d", code)
+	}
+	if _, errOut, code := s.run(nail, delWeb...); code != 0 || !strings.Contains(plain(errOut), insisted) {
+		t.Fatalf("insist: stderr %q code %d", errOut, code)
+	}
+	for i := 0; i < 3; i++ {
+		_, errOut, code := s.run(nail, "get", "ns")
+		if code != 0 || strings.Contains(errOut, "web-1") {
+			t.Fatalf("command %d after the delete: stderr %q code %d", i, errOut, code)
+		}
+	}
+}

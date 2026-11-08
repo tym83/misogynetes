@@ -144,11 +144,17 @@ func run(args []string) int {
 	}
 	code, err := runKubectl(cmd, args, func(stderr string) {
 		var lines []string
-		update(func() { lines = c.Failed(args, stderr) })
+		update(func() {
+			lines = c.Failed(args, stderr)
+			c.Gone(notFound(args, stderr))
+		})
 		say(lines)
 	})
 	if err != nil {
 		return wrapperError(err)
+	}
+	if gone := deletedObjects(args); code == 0 && len(gone) > 0 {
+		update(func() { c.Gone(gone) })
 	}
 	if output != nil && code == 0 {
 		var lines []string
