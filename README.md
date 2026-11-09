@@ -107,7 +107,7 @@ You didn't even try to fix it. That's all I ever wanted. 💕
 
 - **She shares.** When the output of your own `get`, `describe`, `logs` or
   `events` shows trouble (`CrashLoopBackOff`, `Error`, `OOMKilled`,
-  `ImagePullBackOff`, `NotReady`, a restart in the last minute, a `Warning` event,
+  `ImagePullBackOff`, `NotReady`, a restart in the last 5 minutes, a `Warning` event,
   errors in the logs), she says so after kubectl's output and remembers the
   object. She reads only table and description output: `-o yaml`, `-o json`
   and the like are left alone.
@@ -120,7 +120,9 @@ You didn't even try to fix it. That's all I ever wanted. 💕
   day does she let it go.
 - **You listen.** `misogynectl aga` (also `ага`, `угу`, `uh-huh`, `mhm`, `aha`,
   `yeah`) runs no kubectl, tells her you heard and starts her over from
-  calm. After that you may fix whatever you like.
+  calm. After that you may fix whatever you like. A crash loop is one
+  problem however long it lasts: once heard, it stays heard until the pod
+  has sorted itself out, and only trouble after that is new.
 - **You fix.** A command that changes something (`delete`, `apply`, `edit`,
   `patch`, `scale`, `rollout restart`, `set`, `drain`, `cordon`, `label`,
   `exec`, ...) while she is unheard is refused: nothing runs and the exit
@@ -134,8 +136,9 @@ You didn't even try to fix it. That's all I ever wanted. 💕
   and a deleted Deployment, ReplicaSet, StatefulSet, DaemonSet, Job or
   CronJob takes the pods it created with it (unless `--cascade=orphan`).
 - **It sorts itself out.** When a later read shows the object healthy now
-  (for a pod: running and ready, its last restart more than a minute ago;
-  a crash-looping pod looks ready for a moment right after each restart), she
+  (for a pod: running and ready, its last restart more than 5 minutes ago;
+  a crash-looping pod looks ready for a moment right after each restart,
+  and the kubelet waits up to 5 minutes between restarts), she
   says so and thanks you for listening, with something extra if all you did
   was listen. If you never listened, it is "sorted itself out. Not that you'd
   notice.", and she still wants to be heard about it until `aga`.

@@ -61,21 +61,27 @@ func TestSheSharesOnceAndRemembers(t *testing.T) {
 	}
 	// Unheard, the same trouble is never announced as new again: she
 	// reminds you instead, however long it takes.
-	for _, later := range []time.Duration{0, shareWindow + time.Minute, 5 * time.Hour} {
+	for _, later := range []time.Duration{0, 20 * time.Minute, 5 * time.Hour} {
 		c.Now = t0.Add(later)
 		if again := c.Observe(getPods, crashTable); len(again) != 0 {
 			t.Errorf("after %v: announced the same nail again: %q", later, again)
 		}
 	}
-	// Heard, the same trouble is news again only after the window.
+	// Heard, the same trouble is one grievance for as long as it lasts: a
+	// crash loop that goes on is not news, however long.
 	c.Now = t0
 	c.Aga()
-	if again := c.Observe(getPods, crashTable); len(again) != 0 {
-		t.Errorf("announced right after aga: %q", again)
+	for _, later := range []time.Duration{0, 20 * time.Minute, 5 * time.Hour} {
+		c.Now = t0.Add(later)
+		if again := c.Observe(getPods, crashTable); len(again) != 0 || c.unheard() {
+			t.Errorf("after %v: the same heard trouble announced again: %q", later, again)
+		}
 	}
-	c.Now = t0.Add(shareWindow + time.Minute)
+	// Up for streak.Window, it sorted itself out; trouble after that is new.
+	c.Observe(getPods, healthyTable)
+	c.Now = c.Now.Add(time.Hour)
 	if again := c.Observe(getPods, crashTable); !contains(again, "web-1") || !c.unheard() {
-		t.Errorf("heard trouble back after the window: %q", again)
+		t.Errorf("new trouble after health: %q", again)
 	}
 }
 
@@ -586,17 +592,20 @@ func TestNotFoundIsGone(t *testing.T) {
 }
 
 // She goes by how the pod is now: running and ready, with its last restart
-// over a minute ago, it sorted itself out, however recent the trouble was.
+// over streak.Window ago, it sorted itself out, however recent the trouble
+// was. A restart within the window is the same crash loop.
 func TestSortedItselfOutAsSoonAsItIsHealthy(t *testing.T) {
 	c := cluster(3)
 	c.Observe(getPods, crashTable)
 	c.Aga()
 	c.Now = c.Now.Add(2 * time.Minute)
-	settling := "NAME     READY   STATUS    RESTARTS      AGE\nweb-1    1/1     Running   7 (30s ago)   11m\n"
-	if got := c.Observe(getPods, settling); len(got) != 0 {
-		t.Errorf("just restarted, already sorted out: %q", got)
+	for _, ago := range []string{"30s", "4m0s"} {
+		settling := "NAME     READY   STATUS    RESTARTS      AGE\nweb-1    1/1     Running   7 (" + ago + " ago)   11m\n"
+		if got := c.Observe(getPods, settling); len(got) != 0 {
+			t.Errorf("restarted %s ago, already sorted out: %q", ago, got)
+		}
 	}
-	settled := "NAME     READY   STATUS    RESTARTS     AGE\nweb-1    1/1     Running   7 (2m ago)   13m\n"
+	settled := "NAME     READY   STATUS    RESTARTS     AGE\nweb-1    1/1     Running   7 (6m ago)   17m\n"
 	if got := c.Observe(getPods, settled); !contains(got, "pod/web-1 in shop sorted itself out") {
 		t.Errorf("healthy now, not sorted out: %q", got)
 	}

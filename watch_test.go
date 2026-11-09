@@ -181,9 +181,9 @@ func TestWatcherComesRunningAndEscalates(t *testing.T) {
 			t.Fatalf("nagged %v after aga: %q", d-6*defaultNag, got)
 		}
 	}
-	// Heard a while ago and still crashing: that is news again.
-	if got := tw.at(t, tw.Poll); !contains(got, "pod/web-1") {
-		t.Errorf("still crashing an hour later, not a word: %q", got)
+	// Heard, and the same crash loop still going: one grievance, heard.
+	if got := tw.at(t, tw.Poll); got != nil {
+		t.Errorf("the same heard crash loop announced again: %q", got)
 	}
 }
 

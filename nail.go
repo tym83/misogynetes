@@ -33,9 +33,6 @@ import (
 const nailExit = 75
 
 const (
-	// shareWindow is how soon after you heard it the same trouble is not
-	// worth announcing again. Unheard trouble never goes quiet.
-	shareWindow = 15 * time.Minute
 	// insistWindow is how soon the same fix must be typed again to insist.
 	insistWindow = 2 * time.Minute
 	// forgetAfter is when she lets go of a problem nobody ever saw fixed.
@@ -243,8 +240,10 @@ func (c *Cluster) observe(sightings []Sighting) []string {
 		case s.Trouble && known != nil && !known.Heard:
 			// Still the same nail, and she is still telling you about it.
 			known.Healed = false
-		case s.Trouble && known != nil && c.recent(known.At, shareWindow):
-			// You heard it a moment ago.
+		case s.Trouble && known != nil:
+			// You heard it, and it is the same trouble still: a crash loop
+			// is one grievance, however long it lasts. It is news again
+			// only after it was seen healthy (streak.Window up).
 		case s.Trouble:
 			sh := Share{Object: s.Object, Why: s.Why, At: c.Now}
 			if known != nil {

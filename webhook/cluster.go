@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/tym83/misogynetes/persona"
+	"github.com/tym83/misogynetes/streak"
 )
 
 // Pod is the part of a Pod she reads: names, reasons and times, never a
@@ -52,23 +53,35 @@ type Pod struct {
 			LastTransitionTime time.Time `json:"lastTransitionTime"`
 		} `json:"conditions"`
 		ContainerStatuses []struct {
-			State struct {
+			RestartCount int `json:"restartCount"`
+			State        struct {
 				Waiting *struct {
 					Reason string `json:"reason"`
 				} `json:"waiting,omitempty"`
-				Terminated *struct {
-					Reason string `json:"reason"`
-				} `json:"terminated,omitempty"`
+				Running *struct {
+					StartedAt time.Time `json:"startedAt"`
+				} `json:"running,omitempty"`
+				Terminated *terminated `json:"terminated,omitempty"`
 			} `json:"state"`
+			LastState struct {
+				Terminated *terminated `json:"terminated,omitempty"`
+			} `json:"lastState"`
 		} `json:"containerStatuses"`
 	} `json:"status"`
+}
+
+// terminated is a finished run of a container: why, and when.
+type terminated struct {
+	Reason     string    `json:"reason"`
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
 }
 
 // Grievance is a pod in trouble she wants to be heard about.
 type Grievance struct {
 	Object string    // pod/web-1
 	Why    string    // it's CrashLoopBackOff
-	Since  time.Time // when the pod stopped being ready, as the pod says
+	Since  time.Time // when the trouble began, see since
 }
 
 // Grievances are the pods in trouble, in name order. Pods being deleted
@@ -83,19 +96,53 @@ func Grievances(pods []Pod) []Grievance {
 		if why == "" {
 			continue
 		}
-		g := Grievance{Object: "pod/" + p.Metadata.Name, Why: "it's " + why}
-		if p.Status.StartTime != nil {
-			g.Since = *p.Status.StartTime
-		}
-		for _, c := range p.Status.Conditions {
-			if c.Type == "Ready" && c.Status != "True" && !c.LastTransitionTime.IsZero() {
-				g.Since = c.LastTransitionTime
-			}
-		}
-		out = append(out, g)
+		out = append(out, Grievance{Object: "pod/" + p.Metadata.Name, Why: "it's " + why, Since: since(p)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Object < out[j].Object })
 	return out
+}
+
+// since is when a pod's trouble began: when it stopped being ready, or, for
+// a container in a crash loop, when the loop began (streak.Start). The pod
+// is ready for a moment after every restart, which moves the Ready
+// condition along; the loop's start stays put, so being heard about a
+// crash loop lasts as long as the loop. It is never before the pod started.
+func since(p Pod) time.Time {
+	var at time.Time
+	if p.Status.StartTime != nil {
+		at = *p.Status.StartTime
+	}
+	for _, c := range p.Status.Conditions {
+		if c.Type == "Ready" && c.Status != "True" && !c.LastTransitionTime.IsZero() {
+			at = c.LastTransitionTime
+		}
+	}
+	stopped := at
+	for _, c := range p.Status.ContainerStatuses {
+		// The last finished run, and how many runs came before it.
+		last, before := c.State.Terminated, c.RestartCount
+		if last == nil {
+			last = c.LastState.Terminated
+			if r := c.State.Running; r != nil {
+				// Up for Window before the pod stopped being ready: the
+				// runs before this one are history, not this trouble.
+				if !r.StartedAt.IsZero() && stopped.Sub(r.StartedAt) >= streak.Window {
+					continue
+				}
+				before--
+			}
+		}
+		if last == nil || last.StartedAt.IsZero() || last.FinishedAt.IsZero() {
+			continue
+		}
+		if s := streak.Start(streak.Run{Started: last.StartedAt, Finished: last.FinishedAt}, max(before, 0)); at.IsZero() || s.Before(at) {
+			at = s
+		}
+	}
+	if p.Status.StartTime != nil && at.Before(*p.Status.StartTime) {
+		at = *p.Status.StartTime
+	}
+	return at
 }
 
 // trouble is the reason a pod is in trouble, or "".

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/tym83/misogynetes/persona"
+	"github.com/tym83/misogynetes/streak"
 )
 
 // What she notices in the output of the read commands you typed. She never
@@ -109,9 +110,10 @@ var healthyStatuses = map[string]bool{
 
 // recentRestart: a restart this recent means it is still restarting. A
 // crash-looping pod is Running, even ready, for a moment between crashes,
-// so one look right after a restart is not "healthy". After that she goes
+// and the kubelet backs it off for up to five minutes, so only a pod up
+// for streak.Window since its last restart is healthy. After that she goes
 // by how the pod is now, however many restarts it had before.
-const recentRestart = time.Minute
+const recentRestart = streak.Window
 
 // kinds are the short and plural names of the kinds she cares about.
 var kinds = map[string]string{
