@@ -241,6 +241,18 @@ forget_cache
 as bob -n "$ENFORCE_NS" scale deployment/web --replicas=1
 expect_forbidden "stale heard-at: refused again"
 
+echo "== nothing slips through while she is rolled out"
+# quietFor changes the pod template, so every upgrade replaces her pod. Ask
+# right after each rollout, while the old pod is still terminating and may
+# still be behind the Service: a request it refuses to take passes unchecked
+# (failurePolicy Ignore).
+for i in 1 2 3 4 5; do
+  install --set quietFor=1${i}m >/dev/null
+  kubectl -n "$REL_NS" rollout status deployment misogynetes --timeout=2m >/dev/null
+  as bob -n "$ENFORCE_NS" scale deployment/web --replicas=1 --dry-run=server
+  expect_forbidden "right after rollout $i: still refused"
+done
+
 echo "== webhook down: requests pass (failurePolicy Ignore)"
 kubectl -n "$REL_NS" scale deployment misogynetes --replicas=0
 kubectl -n "$REL_NS" wait --for=delete pod -l app.kubernetes.io/name=misogynetes --timeout=2m || true
