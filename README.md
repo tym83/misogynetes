@@ -293,7 +293,7 @@ object annotated `misogynetes.dev/break-glass=<reason>` goes through anyway.
 
 ```bash
 helm install misogynetes oci://ghcr.io/tym83/charts/misogynetes \
-  --version <version> --namespace misogynetes --create-namespace
+  --namespace misogynetes --create-namespace
 kubectl label namespace shop misogynetes.dev/mode=warn       # shares only
 kubectl label namespace lab  misogynetes.dev/mode=enforce    # also refuses fixes
 ```
@@ -311,7 +311,7 @@ person about the same namespace at most once in 5 minutes. Details are in the
 As a kubectl plugin, with [krew](https://krew.sigs.k8s.io/):
 
 ```bash
-kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn.yaml
+kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/latest/download/misogyn.yaml
 kubectl misogyn about
 ```
 

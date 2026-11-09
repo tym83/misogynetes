@@ -43,7 +43,7 @@ ready later) are new, and she wants to be heard about them too.
 
 ```bash
 helm install misogynetes oci://ghcr.io/tym83/charts/misogynetes \
-  --version <version> --namespace misogynetes --create-namespace
+  --namespace misogynetes --create-namespace
 kubectl label namespace shop misogynetes.dev/mode=warn       # shares only
 kubectl label namespace lab  misogynetes.dev/mode=enforce    # also refuses fixes
 ```
