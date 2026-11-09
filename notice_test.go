@@ -41,7 +41,8 @@ func TestNoticeGetPods(t *testing.T) {
 	const out = `NAME          READY   STATUS                  RESTARTS        AGE
 crash-1       0/1     CrashLoopBackOff        6 (40s ago)     9m
 flappy-1      1/1     Running                 3 (40s ago)     9m
-settled-1     1/1     Running                 3 (2m ago)      9m
+looping-1     1/1     Running                 3 (4m ago)      9m
+settled-1     1/1     Running                 3 (6m ago)      9m
 calm-1        1/1     Running                 3 (2d ago)      9d
 init-1        0/1     Init:Error              0               1m
 pull-1        0/1     ImagePullBackOff        0               1m
@@ -52,6 +53,7 @@ job-1         0/1     Completed               0               1h
 `
 	want := `trouble shop/pod/crash-1: it's CrashLoopBackOff
 trouble shop/pod/flappy-1: it keeps restarting
+trouble shop/pod/looping-1: it keeps restarting
 healthy shop/pod/settled-1
 healthy shop/pod/calm-1
 trouble shop/pod/init-1: it's Error
