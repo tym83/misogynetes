@@ -23,9 +23,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tym83/misogynetes/streak"
 )
 
 var now = time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
@@ -264,5 +267,88 @@ func TestAPI(t *testing.T) {
 	}
 	if _, err := a.Pods(context.Background(), "nope/../x"); err == nil {
 		t.Error("an unknown path did not fail")
+	}
+}
+
+// loopPod is web-1 crash-looping since start: every run lasts run, then
+// the kubelet backs off (10s doubling to 5m) and starts it again. It
+// returns the pod as she reads it after the given number of crashes:
+// waiting out the back-off, or, with running, just restarted and not yet
+// ready. The Ready condition flips at every crash and restart.
+func loopPod(t *testing.T, start time.Time, run time.Duration, crashes int, running bool) (Pod, time.Time) {
+	t.Helper()
+	at := start
+	var lastStart, lastEnd time.Time
+	for i := 0; i < crashes; i++ {
+		lastStart, lastEnd = at, at.Add(run)
+		at = lastEnd.Add(min(10*time.Second<<i, 5*time.Minute))
+	}
+	ts := func(t time.Time) string { return t.Format(time.RFC3339Nano) }
+	state, restarts, ready, seen := `"waiting":{"reason":"CrashLoopBackOff"}`, crashes-1, lastEnd, lastEnd
+	if running {
+		state, restarts, ready, seen = `"running":{"startedAt":"`+ts(at)+`"}`, crashes, at, at
+	}
+	raw := `{"metadata":{"name":"web-1"},"status":{"phase":"Running","startTime":"` + ts(start) + `",
+"conditions":[{"type":"Ready","status":"False","lastTransitionTime":"` + ts(ready) + `"}],
+"containerStatuses":[{"restartCount":` + strconv.Itoa(restarts) + `,"state":{` + state + `},
+"lastState":{"terminated":{"reason":"Error","startedAt":"` + ts(lastStart) + `","finishedAt":"` + ts(lastEnd) + `"}}}]}}`
+	return pods(t, raw)[0], seen
+}
+
+// A crash loop is one grievance: heard once it began, she stays heard
+// through every restart, however the Ready condition flaps.
+func TestCrashLoopHeardOnce(t *testing.T) {
+	start := now.Add(-time.Hour)
+	heard := start.Add(5 * time.Second)
+	for _, run := range []time.Duration{100 * time.Millisecond, 3 * time.Second, 2 * time.Minute} {
+		for crashes := 1; crashes <= 20; crashes++ {
+			for _, running := range []bool{false, true} {
+				if running && run > time.Second {
+					continue // not ready yet only matters for a moment
+				}
+				p, at := loopPod(t, start, run, crashes, running)
+				g := Grievances([]Pod{p})
+				if len(g) == 0 && !running {
+					t.Fatalf("run %v, crash %d: no grievance", run, crashes)
+				}
+				if len(g) > 0 && g[0].Since.After(heard) {
+					t.Errorf("run %v, crash %d, running %v (seen at %v): began %v, after heard-at %v",
+						run, crashes, running, at.Sub(start), g[0].Since.Sub(start), heard.Sub(start))
+				}
+			}
+		}
+	}
+}
+
+// Through the webhook: heard about the loop, a fix goes through after
+// the Ready condition flapped again.
+func TestCrashLoopFlapStaysHeard(t *testing.T) {
+	start := now.Add(-time.Hour)
+	p, _ := loopPod(t, start, time.Second, 6, false)
+	c := &fakeCluster{pods: []Pod{p}, heard: start.Add(10 * time.Second)}
+	m := misogynist(c)
+	if r := m.Decide(Enforce, request("UPDATE", "bob")); !r.Allowed {
+		t.Errorf("refused after being heard: %+v", r.Result)
+	}
+}
+
+// After Window up, the loop's history is over: a pod that stops being
+// ready now is a new grievance, the old heard-at does not cover it.
+func TestTroubleAfterHealthIsNew(t *testing.T) {
+	ts := func(t time.Time) string { return t.Format(time.RFC3339) }
+	started := now.Add(-3 * time.Hour)
+	raw := `{"metadata":{"name":"web-1"},"status":{"phase":"Running","reason":"NotReady","startTime":"` + ts(now.Add(-4*time.Hour)) + `",
+"conditions":[{"type":"Ready","status":"False","lastTransitionTime":"` + ts(now.Add(-time.Minute)) + `"}],
+"containerStatuses":[{"restartCount":4,"state":{"running":{"startedAt":"` + ts(started) + `"}},
+"lastState":{"terminated":{"reason":"Error","startedAt":"` + ts(started.Add(-20*time.Second)) + `","finishedAt":"` + ts(started.Add(-10*time.Second)) + `"}}}]}}`
+	g := Grievances(pods(t, raw))
+	if len(g) != 1 || !g[0].Since.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("grievances: %+v", g)
+	}
+	// A crash after a long healthy run is new trouble too.
+	p, _ := loopPod(t, now.Add(-time.Hour), streak.Window+time.Minute, 3, false)
+	g = Grievances([]Pod{p})
+	if len(g) != 1 || g[0].Since.Before(now.Add(-time.Hour).Add(2*streak.Window)) {
+		t.Fatalf("after a healthy run: %+v", g)
 	}
 }
