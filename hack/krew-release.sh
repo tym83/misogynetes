@@ -49,16 +49,24 @@ for p in $platforms; do
 	echo "built $archive"
 done
 
-# Every version in the template becomes $version; the sha256 line after
-# each uri gets the checksum of that uri's archive.
-awk -v version="$version" -v sums="$sums" '
+# The template's leading comment is about the template; the manifest gets
+# its own header. Every version in the template becomes $version; the sha256
+# line after each uri gets the checksum of that uri's archive.
+homepage=$(sed -n 's/^  homepage: *//p' "$root/plugins/$plugin.yaml")
+[ -n "$homepage" ] || { echo "$0: no spec.homepage in plugins/$plugin.yaml" >&2; exit 1; }
+awk -v version="$version" -v sums="$sums" -v plugin="$plugin" -v homepage="$homepage" '
 	BEGIN {
 		n = split(sums, pairs, " ")
 		for (i = 1; i <= n; i++) {
 			split(pairs[i], kv, "=")
 			sum[kv[1]] = kv[2]
 		}
+		print "# krew plugin manifest for `kubectl " plugin "` " version "."
+		print "#   kubectl krew install --manifest-url=" homepage "/releases/download/" version "/" plugin ".yaml"
+		header = 1
 	}
+	header && (/^#/ || /^[[:space:]]*$/) { next }
+	{ header = 0 }
 	/^  version: / { sub(/v[0-9]+\.[0-9]+\.[0-9]+/, version) }
 	/^ *uri: / {
 		gsub(/v[0-9]+\.[0-9]+\.[0-9]+/, version)
