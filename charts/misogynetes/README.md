@@ -37,7 +37,10 @@ deployment.apps/web restarted
 ```
 
 Grievances that started after the `heard-at` time (a pod that stopped being
-ready later) are new, and she wants to be heard about them too.
+ready later) are new, and she wants to be heard about them too. A crash loop
+is one grievance from its first crash: the pod looks ready for a moment
+after every restart, and that does not make it new. Only a pod that stayed
+up for 5 minutes has sorted itself out, and trouble after that is new.
 
 ## Install
 
