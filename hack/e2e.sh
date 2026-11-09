@@ -223,9 +223,18 @@ settled() {
   exit 1
 }
 settled
-sleep 2
+sleep 2 # heard-at has whole seconds: strictly after the loops began
+restarts() { kubectl -n "$ENFORCE_NS" get pods -l app=web -o jsonpath='{range .items[*]}{.metadata.name}={.status.containerStatuses[0].restartCount}{" "}{end}'; }
+before=$(restarts)
 kubectl annotate namespace "$ENFORCE_NS" misogynetes.dev/heard-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
 forget_cache
+# A crash loop is one grievance: wait for a restart after heard-at, which
+# flaps the pod's Ready condition, and she must still count it as heard.
+for _ in $(seq 150); do
+  [[ $(restarts) != "$before" ]] && break
+  sleep 2
+done
+if [[ $(restarts) != "$before" ]]; then pass "heard: a web pod restarted after heard-at"; else fail "heard: no web pod restarted after heard-at"; fi
 kubectl -n "$ENFORCE_NS" run calm2 --image=busybox:1.36 --restart=Never -- sleep 3600
 kubectl -n "$ENFORCE_NS" wait --for=condition=Ready pod/calm2 --timeout=3m
 as bob -n "$ENFORCE_NS" exec calm2 -- true
