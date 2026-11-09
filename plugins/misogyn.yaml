@@ -1,10 +1,7 @@
-# krew plugin manifest for `kubectl misogyn`.
-#
-# The sha256 values below are placeholders: the release workflow
-# (.github/workflows/release.yml) builds the archives on a v* tag, fills in
-# their checksums with hack/krew-release.sh and attaches the result to the
-# GitHub release as misogyn.yaml. Install from there:
-#   kubectl krew install --manifest-url=https://github.com/tym83/misogynetes/releases/download/v0.1.0/misogyn.yaml
+# Template of the krew plugin manifest for `kubectl misogyn`; not installable
+# as is. hack/krew-release.sh drops this comment, sets the version, fills in
+# the sha256 of every archive and writes the manifest the release workflow
+# (.github/workflows/release.yaml) attaches to each GitHub release.
 apiVersion: krew.googlecontainertools.github.com/v1alpha2
 kind: Plugin
 metadata:

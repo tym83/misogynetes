@@ -36,3 +36,22 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: docker build -t misogynetes-webhook:ci .
+
+  krew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Release manifest
+        # What a release attaches: the header and every version say the
+        # released one, nothing is left of the template.
+        run: |
+          hack/krew-release.sh v9.8.7 "${{ runner.temp }}/dist"
+          m="${{ runner.temp }}/dist/misogyn.yaml"
+          cat "$m"
+          head -n1 "$m" | grep -qx '# krew plugin manifest for `kubectl misogyn` v9.8.7.'
+          if grep -i -e template -e placeholder -e 'sha256: "0*"' "$m"; then exit 1; fi
+          if grep -E 'v[0-9]+\.[0-9]+\.[0-9]+' "$m" | grep -v v9.8.7; then exit 1; fi
