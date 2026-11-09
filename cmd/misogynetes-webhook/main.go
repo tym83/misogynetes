@@ -44,6 +44,7 @@ func main() {
 	key := flag.String("tls-key", "/tls/tls.key", "TLS private key")
 	window := flag.Duration("quiet-for", 5*time.Minute, "how long she keeps quiet to the same person about the same namespace")
 	sas := flag.Bool("service-accounts", false, "share with service accounts too (never those in kube-system)")
+	drain := flag.Duration("drain", 5*time.Second, "after SIGTERM, keep serving this long, until the API server stops sending requests here")
 	flag.Parse()
 
 	api, err := webhook.InCluster()
@@ -73,6 +74,12 @@ func main() {
 	defer stop()
 	go func() {
 		<-ctx.Done()
+		// A terminating pod leaves the Service's endpoints only after the
+		// fact, and every kube-proxy takes its time to notice. Closing the
+		// listener at once would refuse the requests still routed here, and
+		// with failurePolicy Ignore they pass unseen.
+		log.Printf("misogynetes-webhook: draining for %s", *drain)
+		time.Sleep(*drain)
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
